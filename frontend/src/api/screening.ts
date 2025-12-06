@@ -9,6 +9,7 @@ export interface ScreeningRunReq {
   order_by?: ScreeningOrderBy[]
   limit?: number
   offset?: number
+  data_source?: string  // 数据源（可选）
 }
 
 export interface ScreeningRunItem {
@@ -59,6 +60,9 @@ export const screeningApi = {
   run: (payload: ScreeningRunReq, options?: { timeout?: number }) =>
     ApiClient.post<ScreeningRunResp>('/api/screening/run', payload, { timeout: options?.timeout ?? 120000 }),
   getFields: () => ApiClient.get<FieldConfigResponse>('/api/screening/fields'),
-  getIndustries: () => ApiClient.get<IndustriesResponse>('/api/screening/industries')
+  getIndustries: (dataSource?: string) => {
+    const params = dataSource ? { data_source: dataSource } : {}
+    return ApiClient.get<IndustriesResponse>('/api/screening/industries', { params })
+  }
 }
 

@@ -44,6 +44,7 @@ export interface PlaceOrderPayload {
   code: string
   side: 'buy' | 'sell'
   quantity: number
+  price?: number  // 🔥 可选的价格参数（如果不传则使用最新价）
   analysis_id?: string
 }
 

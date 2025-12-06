@@ -40,7 +40,8 @@ class EnhancedScreeningService:
         limit: int = 50,
         offset: int = 0,
         order_by: Optional[List[Dict[str, str]]] = None,
-        use_database_optimization: bool = True
+        use_database_optimization: bool = True,
+        data_source: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         智能股票筛选
@@ -63,15 +64,17 @@ class EnhancedScreeningService:
         try:
             # 分析筛选条件
             analysis = self._analyze_conditions(conditions)
+            logger.info(f"📊 筛选条件分析: {analysis}")
 
             # 决定使用哪种筛选方式
+            # 注意：文本搜索（symbol/code/name）也可以通过数据库优化处理
             if (use_database_optimization and
                 analysis["can_use_database"] and
                 not analysis["needs_technical_indicators"]):
 
                 # 使用数据库优化筛选
                 result = await self._screen_with_database(
-                    conditions, limit, offset, order_by
+                    conditions, limit, offset, order_by, data_source
                 )
                 optimization_used = "database"
                 source = "mongodb"
@@ -159,7 +162,8 @@ class EnhancedScreeningService:
         conditions: List[ScreeningCondition],
         limit: int,
         offset: int,
-        order_by: Optional[List[Dict[str, str]]]
+        order_by: Optional[List[Dict[str, str]]],
+        data_source: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], int]:
         """使用数据库优化筛选"""
         logger.info("🚀 使用数据库优化筛选")
@@ -168,7 +172,8 @@ class EnhancedScreeningService:
             conditions=conditions,
             limit=limit,
             offset=offset,
-            order_by=order_by
+            order_by=order_by,
+            source=data_source  # 🔥 传递数据源参数
         )
 
     async def _screen_with_traditional_method(

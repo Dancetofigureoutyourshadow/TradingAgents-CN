@@ -25,6 +25,7 @@ class PlaceOrderRequest(BaseModel):
     code: str = Field(..., description="股票代码（支持A股/港股/美股）")
     side: Literal["buy", "sell"]
     quantity: int = Field(..., gt=0)
+    price: Optional[float] = Field(None, description="指定价格（可选，不传则使用最新价）")
     market: Optional[str] = Field(None, description="市场类型 (CN/HK/US)，不传则自动识别")
     # 可选：关联的分析ID，便于从分析页面一键下单后追踪
     analysis_id: Optional[str] = None
@@ -368,13 +369,18 @@ async def place_order(payload: PlaceOrderRequest, current_user: dict = Depends(g
     # 3. 获取账户
     acc = await _get_or_create_account(current_user["id"])
 
-    # 4. 获取价格
-    price = await _get_last_price(normalized_code, market)
-    if price is None or price <= 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"无法获取股票 {normalized_code} ({market}) 的最新价格"
-        )
+    # 4. 获取价格（优先使用用户指定的价格，否则获取最新价）
+    if payload.price is not None and payload.price > 0:
+        price = float(payload.price)
+        logger.info(f"🔥 使用用户指定价格: {normalized_code} ({market}) = {price}")
+    else:
+        price = await _get_last_price(normalized_code, market)
+        if price is None or price <= 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"无法获取股票 {normalized_code} ({market}) 的最新价格"
+            )
+        logger.info(f"📊 使用最新市场价格: {normalized_code} ({market}) = {price}")
 
     # 5. 计算金额
     notional = round(price * qty, 2)

@@ -23,8 +23,9 @@ class DatabaseScreeningService:
         # 支持的基础信息字段映射
         self.basic_fields = {
             # 基本信息
-            "code": "code",
-            "name": "name", 
+            "symbol": "code",      # 股票代码（前端使用symbol）
+            "code": "code",        # 股票代码（兼容书写）
+            "name": "name",        # 股票名称
             "industry": "industry",
             "area": "area",
             "market": "market",
@@ -216,11 +217,23 @@ class DatabaseScreeningService:
                         "$lte": value[1]
                     }
             elif operator == "contains":
-                # 字符串包含（不区分大小写）
-                query[db_field] = {
-                    "$regex": str(value),
-                    "$options": "i"
-                }
+                # 🔥 特殊处理：对于 symbol 字段，需要在 code 和 name 两个字段中进行 匹配
+                if field == "symbol":
+                    # 对 code 和 name 都执行 contains 查询
+                    regex_pattern = {"$regex": str(value), "$options": "i"}
+                    query.update({
+                        "$or": [
+                            {"code": regex_pattern},
+                            {"name": regex_pattern}
+                        ]
+                    })
+                    logger.info(f"🔥 [_build_query] symbol contains: 在 code 或 name 字段中搜索 {value}")
+                else:
+                    # 一般处理：单字段 contains
+                    query[db_field] = {
+                        "$regex": str(value),
+                        "$options": "i"
+                    }
             elif operator in self.operators:
                 # 标准操作符
                 mongo_op = self.operators[operator]

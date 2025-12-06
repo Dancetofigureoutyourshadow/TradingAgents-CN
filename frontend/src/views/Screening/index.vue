@@ -15,20 +15,23 @@
     <el-card class="filter-panel" shadow="never">
       <template #header>
         <div class="card-header">
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <span>筛选条件</span>
-            <el-tag v-if="currentDataSource" type="info" size="small" effect="plain">
-              <el-icon style="vertical-align: middle; margin-right: 4px;"><Connection /></el-icon>
-              当前数据源: {{ currentDataSource.name }}
-              <span v-if="currentDataSource.token_source_display" style="margin-left: 4px; opacity: 0.8;">
-                ({{ currentDataSource.token_source_display }})
-              </span>
-            </el-tag>
-            <el-tag v-else type="warning" size="small">
-              <el-icon style="vertical-align: middle; margin-right: 4px;"><Warning /></el-icon>
-              无可用数据源
-            </el-tag>
-          </div>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <span>筛选条件</span>
+          <el-select
+            v-model="selectedDataSource"
+            placeholder="选择数据源"
+            style="width: 200px"
+            clearable
+            @change="loadCurrentDataSource"
+          >
+            <el-option
+              v-for="source in dataSourceOptions"
+              :key="source.name"
+              :label="`${source.name} (${source.token_source_display || ''})`"
+              :value="source.name"
+            />
+          </el-select>
+        </div>
           <div class="header-actions">
             <el-button type="text" @click="resetFilters">
               <el-icon><Refresh /></el-icon>
@@ -50,6 +53,20 @@
           </el-col>
 
           <el-col :span="8">
+            <el-form-item label="股票代码或名称">
+              <el-input
+                v-model="filters.searchKeyword" 
+                placeholder="搜索股票代码或名称" 
+                clearable
+                @keyup.enter="performScreening">
+                <template #prefix>
+                  <el-icon><Search /></el-icon>
+                </template>
+              </el-input>
+            </el-form-item>
+        </el-col>
+
+          <el-col :span="8">
             <el-form-item label="行业分类">
               <el-select
                 v-model="filters.industry"
@@ -68,6 +85,9 @@
             </el-form-item>
           </el-col>
 
+        </el-row>
+
+        <el-row :gutter="24">
           <el-col :span="8">
             <el-form-item label="市值范围">
               <el-select v-model="filters.marketCapRange" placeholder="选择市值范围">
@@ -77,9 +97,6 @@
               </el-select>
             </el-form-item>
           </el-col>
-        </el-row>
-
-        <el-row :gutter="24">
           <!-- 财务指标 -->
           <el-col :span="8">
             <el-form-item label="市盈率 (PE)">
@@ -120,6 +137,9 @@
               />
             </el-form-item>
           </el-col>
+        </el-row>
+
+        <el-row :gutter="24">
 
           <el-col :span="8">
             <el-form-item label="ROE (%)">
@@ -142,9 +162,7 @@
               />
             </el-form-item>
           </el-col>
-        </el-row>
 
-        <el-row :gutter="24">
           <!-- 技术指标 -->
           <el-col :span="8">
             <el-form-item label="涨跌幅 (%)">
@@ -174,6 +192,9 @@
             </el-form-item>
           </el-col>
 
+        </el-row>
+
+        <el-row :gutter="24">
           <!-- 技术形态暂不实现，先隐藏 -->
           <el-col :span="8" v-if="false">
             <el-form-item label="技术形态">
@@ -218,7 +239,7 @@
     <el-card v-if="screeningResults.length > 0" class="results-panel" shadow="never">
       <template #header>
         <div class="card-header">
-          <span>筛选结果 ({{ screeningResults.length }}只股票)</span>
+          <span>筛选结果 (总计 {{ totalCount }} 只股票)</span>
           <div class="header-actions">
             <el-button
               type="primary"
@@ -273,9 +294,21 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="total_mv" label="市值" width="120" align="right">
+<!--        <el-table-column prop="volume" label="市值" width="120" align="right">-->
+<!--          <template #default="{ row }">-->
+<!--            {{ '-' }}-->
+<!--          </template>-->
+<!--        </el-table-column>-->
+
+        <el-table-column prop="volume" label="总手" width="120" align="right">
           <template #default="{ row }">
-            {{ formatMarketCap(row.total_mv) }}
+            {{ formatVolume(row.volume) }}
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="amount" label="成交额" width="120" align="right">
+          <template #default="{ row }">
+            {{ formatAmount(row?.amount) }}
           </template>
         </el-table-column>
 
@@ -313,7 +346,7 @@
 
         <el-table-column prop="exchange" label="交易所" width="140">
           <template #default="{ row }">
-            {{ row.exchange || '-' }}
+            {{ row.exchange || row.sse || '-' }}
           </template>
         </el-table-column>
 
@@ -336,7 +369,7 @@
           v-model:current-page="currentPage"
           v-model:page-size="pageSize"
           :page-sizes="[20, 50, 100]"
-          :total="screeningResults.length"
+          :total="totalCount"
           layout="total, sizes, prev, pager, next, jumper"
           @size-change="handleSizeChange"
           @current-change="handleCurrentChange"
@@ -373,6 +406,7 @@ const screeningLoading = ref(false)
 const hasSearched = ref(false)
 const screeningResults = ref<StockInfo[]>([])
 const selectedStocks = ref<StockInfo[]>([])
+const totalCount = ref(0)  // 后端返回的总数
 const currentPage = ref(1)
 const pageSize = ref(20)
 
@@ -388,6 +422,14 @@ const currentDataSource = ref<{
   token_source?: 'database' | 'env'
   token_source_display?: string
 } | null>(null)
+const dataSourceOptions = ref<Array<{
+  name: string
+  priority: number
+  description: string
+  token_source?: 'database' | 'env'
+  token_source_display?: string
+}>>([])
+const selectedDataSource = ref<string>('')  // 选中的数据源名称
 
 // 字段配置
 const fieldConfig = ref<FieldConfigResponse | null>(null)
@@ -396,7 +438,9 @@ const fieldsLoading = ref(false)
 // 筛选条件
 const filters = reactive({
   market: 'A股',
+  searchKeyword: '',
   industry: [] as string[],
+  stock: [] as string[],
   marketCapRange: '',
   peRatio: { min: null, max: null },
   pbRatio: { min: null, max: null },
@@ -411,9 +455,8 @@ const industryOptions = ref<Array<{label: string, value: string, count?: number}
 
 // 计算属性
 const paginatedResults = computed(() => {
-  const start = (currentPage.value - 1) * pageSize.value
-  const end = start + pageSize.value
-  return screeningResults.value.slice(start, end)
+  // 后端分页：直接返回当前页的结果
+  return screeningResults.value
 })
 
 // 方法
@@ -483,7 +526,23 @@ const performScreening = async () => {
       }
     }
 
+    if (filters.searchKeyword) {
+      const stock_keyword = filters.searchKeyword.trim().toLowerCase()
+      // 🔥 支持代码和名称同时搜索：使用 symbol 字段的 contains 操作符
+      // 后端会在 symbol（代码）和 name（名称）字段中进行匹配
+      children.push({ field: 'symbol', op: 'contains', value: stock_keyword })
+    }
+
     // 明确指定：不加任何技术指标相关条件
+
+    // 🔥 将显示名称映射为实际的数据源名称
+    let actualDataSource = selectedDataSource.value
+    if (actualDataSource) {
+      const source = dataSourceOptions.value.find(s => s.token_source_display === actualDataSource)
+      if (source) {
+        actualDataSource = source.name  // 使用实际的数据源名称（如 'TuShare', 'AKShare'）
+      }
+    }
 
     const payload = {
       market: 'CN',
@@ -491,8 +550,9 @@ const performScreening = async () => {
       adj: 'qfq',
       conditions: { logic: 'AND', children },
       order_by: [{ field: 'market_cap', direction: 'desc' }],
-      limit: 500,
-      offset: 0,
+      limit: pageSize.value,  // 每页数量
+      offset: (currentPage.value - 1) * pageSize.value,  // 分页偏移
+      data_source: actualDataSource || undefined  // 🔥 传递用户选择的数据源
     }
 
     // 调试日志：打印请求payload
@@ -502,8 +562,10 @@ const performScreening = async () => {
     const res = await screeningApi.run(payload, { timeout: 120000 })
     const data = (res as any)?.data || res // ApiClient封装会返回 {success,data} 格式
     const items = data?.items || []
+    const total = data?.total || 0  // 获取总数
 
-    // 直接使用后端返回的数据，字段名已统一
+    // 后端分页：只显示当前页的数据
+    totalCount.value = total  // 保存总数用于分页组件
     screeningResults.value = items.map((it: any) => ({
       symbol: it.symbol || it.code,  // 主字段
       code: it.symbol || it.code,    // 兼容字段
@@ -512,11 +574,12 @@ const performScreening = async () => {
       industry: it.industry,
       area: it.area,
       board: it.board,  // 板块（主板、创业板、科创板等）
-      exchange: it.exchange,  // 交易所（上海证券交易所、深圳证券交易所等）
+      exchange: it.exchange || it.sse,  // 交易所（上海证券交易所、深圳证券交易所等）
 
       // 市值信息
       total_mv: it.total_mv,
       circ_mv: it.circ_mv,
+      volume: it.volume,
 
       // 财务指标
       pe: it.pe,
@@ -543,7 +606,7 @@ const performScreening = async () => {
       macd_hist: it.macd_hist,
     }))
 
-    ElMessage.success(`筛选完成，找到 ${screeningResults.value.length} 只股票`)
+    ElMessage.success(`筛选完成，总共找到 ${totalCount.value} 只股票`)
   } catch (error) {
     ElMessage.error('筛选失败，请重试')
   } finally {
@@ -567,6 +630,7 @@ const generateMockResults = (): StockInfo[] => {
 const resetFilters = () => {
   Object.assign(filters, {
     market: 'A股',
+    searchKeyword: '',  // 重置搜索关键词
     industry: [],
     marketCapRange: '',
     peRatio: { min: null, max: null },
@@ -579,6 +643,7 @@ const resetFilters = () => {
 
   screeningResults.value = []
   selectedStocks.value = []
+  totalCount.value = 0
   hasSearched.value = false
   currentPage.value = 1
 }
@@ -686,21 +751,36 @@ const getChangeClass = (changePercent: number) => {
   return ''
 }
 
-const formatMarketCap = (marketCap: number) => {
-  if (marketCap >= 10000) {
-    return `${(marketCap / 10000).toFixed(2)}万亿`
-  } else {
-    return `${marketCap.toFixed(2)}亿`
+const formatVolume = (volume: number) => {
+  if (!volume) {
+    return "N/A"
   }
+  if (volume >= 100000000) {
+    return `${(volume / 100000000).toFixed(2)}亿`
+  } else if (volume >= 10000) {
+    return `${(volume / 10000).toFixed(2)}万`
+  }
+    return `${volume.toFixed(2)}`
+}
+
+const formatAmount = (amount: number = 0) => {
+  if (amount >= 100000000) {
+    return `${(amount / 100000000).toFixed(2)}亿`
+  } else if (amount >= 10000) {
+    return `${(amount / 10000).toFixed(2)}万`
+  }
+  return `${amount.toFixed(2)}`
 }
 
 const handleSizeChange = (size: number) => {
   pageSize.value = size
-  currentPage.value = 1
+  currentPage.value = 1  // 改变页面大小时回到第1页
+  performScreening()  // 重新执行筛选以获取新的分页数据
 }
 
 const handleCurrentChange = (page: number) => {
   currentPage.value = page
+  performScreening()  // 翻页时重新执行筛选以获取新页面的数据
 }
 
 // 获取字段配置
@@ -721,7 +801,16 @@ const loadFieldConfig = async () => {
 // 加载行业列表
 const loadIndustries = async () => {
   try {
-    const response = await screeningApi.getIndustries()
+    // 🔥 将显示名称映射为实际的数据源名称
+    let actualDataSource: string | undefined = selectedDataSource.value
+    if (actualDataSource) {
+      const source = dataSourceOptions.value.find(s => s.token_source_display === actualDataSource)
+      if (source) {
+        actualDataSource = source.name  // 使用实际的数据源名称（如 'TuShare', 'AKShare'）
+      }
+    }
+    
+    const response = await screeningApi.getIndustries(actualDataSource)
     const data = response.data || response
     industryOptions.value = data.industries || []
     console.log('行业列表加载成功:', industryOptions.value.length, '个行业')
@@ -759,12 +848,71 @@ const loadFavorites = async () => {
 // 获取当前数据源
 const loadCurrentDataSource = async () => {
   try {
-    const response = await getCurrentDataSource()
-    if (response.success && response.data) {
-      currentDataSource.value = response.data
+    // 如果用户选择了数据源，使用选择的；否则获取默认数据源
+    if (selectedDataSource.value) {
+      const source = dataSourceOptions.value.find(s => s.token_source_display === selectedDataSource.value)
+      if (source) {
+        currentDataSource.value = source
+        console.log('已选择数据源:', source.name)
+        // 🔥 重新加载行业列表（使用新选择的数据源）
+        await loadIndustries()
+      }
+    } else {
+      // 加载默认数据源
+      const response = await getCurrentDataSource()
+      if (response.success && response.data) {
+        currentDataSource.value = response.data
+        selectedDataSource.value = response.data.name
+        console.log('已加载默认数据源:', response.data.name)
+      }
     }
   } catch (e) {
-    console.warn('获取当前数据源失败', e)
+    console.warn('加载数据源失败', e)
+  }
+}
+
+// 加载所有可用的数据源
+const loadDataSourceOptions = async () => {
+  try {
+    const response = await getCurrentDataSource()
+    if (response.success && response.data) {
+      // 花前，所有可用数据源需要从鄍置管理页面获取
+      // 为了推进，需需的接口或仄时使用推荒数据源列表
+      // 即为现在，我们使用最优先级的数据源
+      const sources: typeof dataSourceOptions.value = [
+        {
+          name: 'tushare',
+          priority: 1,
+          description: 'TuShare 数据源',
+          token_source: 'database',
+          token_source_display: '数据库'
+        },
+        {
+          name: 'akshare',
+          priority: 2,
+          description: 'AKShare 数据源',
+          token_source: 'database',
+          token_source_display: '数据库'
+        },
+        {
+          name: 'baostock',
+          priority: 3,
+          description: 'BaoStock 数据源',
+          token_source: 'database',
+          token_source_display: '数据库'
+        }
+      ]
+      dataSourceOptions.value = sources
+      
+      // 设置默认选择
+      if (response.data) {
+        currentDataSource.value = response.data
+        selectedDataSource.value = response.data.name || ''
+      }
+      console.log('已加载数据源选项:', sources.length)
+    }
+  } catch (e) {
+    console.warn('加载数据源选项失败', e)
   }
 }
 
@@ -775,6 +923,8 @@ onMounted(() => {
   loadIndustries()
   // 初始化自选状态
   loadFavorites()
+  // 加载数据源选项
+  loadDataSourceOptions()
   // 加载当前数据源
   loadCurrentDataSource()
 })

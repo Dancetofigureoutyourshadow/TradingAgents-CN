@@ -19,10 +19,15 @@ def analyze_conditions(conditions: List[ScreeningCondition]) -> Dict[str, Any]:
         "needs_technical_indicators": False,
         "unsupported_fields": [],
         "condition_types": [],
+        "has_text_search": False,  # 标记是否有文本搜索（代码/名称）
     }
 
     for condition in conditions:
         field = condition.field
+
+        # 检查是否是文本搜索字段
+        if field in ["symbol", "code", "name"]:
+            analysis["has_text_search"] = True
 
         if field in BASIC_FIELDS_INFO:
             field_info = BASIC_FIELDS_INFO[field]

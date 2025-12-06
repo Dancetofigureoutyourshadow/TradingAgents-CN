@@ -117,6 +117,15 @@ export const stocksApi = {
    */
   async getNews(symbol: string, days = 30, limit = 50, includeAnnouncements = true) {
     return ApiClient.get<NewsResponse>(`/api/stocks/${symbol}/news`, { days, limit, include_announcements: includeAnnouncements })
+  },
+
+  /**
+   * 搜索股票（支持代码和名称模糊查询）
+   * @param keyword 搜索关键词
+   * @param limit 返回数量限制
+   */
+  async searchStocks(keyword: string, limit: number = 10) {
+    return ApiClient.get<{ data: Array<{ symbol?: string; code?: string; name?: string; market?: string }> }>('/api/stock-data/search', { keyword, limit })
   }
 }
 

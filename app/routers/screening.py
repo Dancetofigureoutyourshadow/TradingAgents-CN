@@ -32,8 +32,9 @@ class ScreeningRequest(BaseModel):
     adj: str = Field("qfq", description="复权口径：qfq/hfq/none（P0占位）")
     conditions: Dict[str, Any] = Field(default_factory=dict)
     order_by: Optional[List[OrderByItem]] = None
-    limit: int = Field(50, ge=1, le=500)
+    limit: int = Field(50, ge=1, le=10000)  # 允许最多10000条记录
     offset: int = Field(0, ge=0)
+    data_source: Optional[str] = Field(None, description="数据源（可选，不指定则使用优先级最高的数据源）")
 
 class ScreeningResponse(BaseModel):
     total: int
@@ -98,6 +99,18 @@ def _convert_legacy_conditions_to_new_format(legacy_conditions: Dict[str, Any]) 
         "turnover": "turnover_rate",   # 换手率（兼容旧字段名）
         "change_percent": "pct_chg",   # 涨跌幅（兼容旧字段名）
         "price": "close",              # 价格（兼容旧字段名）
+        "stock_code": "symbol",        # 股票代码（兼容旧字段名）
+        "stock_name": "name",          # 股票名称（兼容旧字段名）
+        # 直接的字段名映射（前端直接使用字段名）
+        "pe": "pe",                    # 市盈率
+        "pb": "pb",                    # 市净率
+        "roe": "roe",                  # 净资产收益率
+        "pct_chg": "pct_chg",          # 涨跌幅
+        "amount": "amount",            # 成交额
+        "total_mv": "total_mv",        # 总市值
+        "circ_mv": "circ_mv",          # 流通市值
+        "close": "close",              # 收盘价
+        "volume": "volume",            # 成交量
     }
 
     # 操作符映射
@@ -110,7 +123,8 @@ def _convert_legacy_conditions_to_new_format(legacy_conditions: Dict[str, Any]) 
         "eq": "==",
         "ne": "!=",
         "in": "in",
-        "contains": "contains"
+        "contains": "contains",
+        "value": "contains",  # 一般的值搜索作为contains
     }
 
     if isinstance(legacy_conditions, dict):
@@ -172,7 +186,8 @@ async def run_screening(req: ScreeningRequest, user: dict = Depends(get_current_
             limit=req.limit,
             offset=req.offset,
             order_by=[{"field": o.field, "direction": o.direction} for o in (req.order_by or [])],
-            use_database_optimization=True
+            use_database_optimization=True,
+            data_source=req.data_source  # 🔥 传递数据源参数
         )
 
         logger.info(f"[screening] 筛选完成: total={result.get('total')}, "
@@ -273,11 +288,17 @@ async def validate_conditions(conditions: List[ScreeningCondition], user: dict =
 
 
 @router.get("/industries")
-async def get_industries(user: dict = Depends(get_current_user)):
+async def get_industries(
+    data_source: Optional[str] = None,
+    user: dict = Depends(get_current_user)
+):
     """
     获取数据库中所有可用的行业列表
-    根据系统配置的数据源优先级，从优先级最高的数据源获取行业分类数据
+    根据系统配置的数据源优先级或用户指定的数据源，获取行业分类数据
     返回按股票数量排序的行业列表
+    
+    Args:
+        data_source: 可选，指定数据源（tushare/akshare/baostock），不指定则使用优先级最高的数据源
     """
     try:
         from app.core.database import get_mongo_db
@@ -286,24 +307,28 @@ async def get_industries(user: dict = Depends(get_current_user)):
         db = get_mongo_db()
         collection = db["stock_basic_info"]
 
-        # 🔥 获取数据源优先级配置（使用统一配置管理器的异步方法）
-        config = UnifiedConfigManager()
-        data_source_configs = await config.get_data_source_configs_async()
+        # 🔥 如果前端指定了数据源，直接使用；否则获取优先级最高的数据源
+        if data_source:
+            preferred_source = data_source.lower()
+            logger.info(f"[get_industries] 使用前端指定的数据源: {preferred_source}")
+        else:
+            # 获取数据源优先级配置（使用统一配置管理器的异步方法）
+            config = UnifiedConfigManager()
+            data_source_configs = await config.get_data_source_configs_async()
 
-        # 提取启用的数据源，按优先级排序（已排序）
-        enabled_sources = [
-            ds.type.lower() for ds in data_source_configs
-            if ds.enabled and ds.type.lower() in ['tushare', 'akshare', 'baostock']
-        ]
+            # 提取启用的数据源，按优先级排序（已排序）
+            enabled_sources = [
+                ds.type.lower() for ds in data_source_configs
+                if ds.enabled and ds.type.lower() in ['tushare', 'akshare', 'baostock']
+            ]
 
-        if not enabled_sources:
-            # 如果没有配置，使用默认顺序
-            enabled_sources = ['tushare', 'akshare', 'baostock']
+            if not enabled_sources:
+                # 如果没有配置，使用默认顺序
+                enabled_sources = ['tushare', 'akshare', 'baostock']
 
-        logger.info(f"[get_industries] 数据源优先级: {enabled_sources}")
-
-        # 🔥 按优先级查询：优先使用优先级最高的数据源
-        preferred_source = enabled_sources[0] if enabled_sources else 'tushare'
+            logger.info(f"[get_industries] 数据源优先级: {enabled_sources}")
+            # 按优先级查询：优先使用优先级最高的数据源
+            preferred_source = enabled_sources[0] if enabled_sources else 'tushare'
 
         # 聚合查询：按行业分组并统计股票数量（只查询指定数据源）
         pipeline = [
