@@ -195,7 +195,7 @@
         </el-row>
 
         <el-row :gutter="24">
-          <!-- 技术形态暂不实现，先隐藏 -->
+          <!-- 技术形态选股 -->
           <el-col :span="8" v-if="false">
             <el-form-item label="技术形态">
               <el-select
@@ -203,11 +203,40 @@
                 placeholder="选择技术形态"
                 multiple
                 collapse-tags
+                collapse-tags-tooltip
               >
-                <el-option label="突破上升趋势" value="breakout_up" />
-                <el-option label="回调买入机会" value="pullback" />
-                <el-option label="底部反转" value="bottom_reversal" />
-                <el-option label="强势整理" value="consolidation" />
+                <el-option label="MACD金叉" value="macd_golden_cross">
+                  <span>MACD金叉</span>
+                  <el-tag size="small" type="success" style="margin-left: 8px">看涨</el-tag>
+                </el-option>
+                <el-option label="MACD死叉" value="macd_death_cross">
+                  <span>MACD死叉</span>
+                  <el-tag size="small" type="danger" style="margin-left: 8px">看跌</el-tag>
+                </el-option>
+                <el-option label="KDJ超买" value="kdj_overbought">
+                  <span>KDJ超买 (K>80)</span>
+                  <el-tag size="small" type="warning" style="margin-left: 8px">高位</el-tag>
+                </el-option>
+                <el-option label="KDJ超卖" value="kdj_oversold">
+                  <span>KDJ超卖 (K<20)</span>
+                  <el-tag size="small" type="info" style="margin-left: 8px">低位</el-tag>
+                </el-option>
+                <el-option label="KDJ金叉" value="kdj_golden_cross">
+                  <span>KDJ金叉</span>
+                  <el-tag size="small" type="success" style="margin-left: 8px">看涨</el-tag>
+                </el-option>
+                <el-option label="RSI超买" value="rsi_overbought">
+                  <span>RSI超买 (>70)</span>
+                  <el-tag size="small" type="warning" style="margin-left: 8px">高位</el-tag>
+                </el-option>
+                <el-option label="RSI超卖" value="rsi_oversold">
+                  <span>RSI超卖 (<30)</span>
+                  <el-tag size="small" type="info" style="margin-left: 8px">低位</el-tag>
+                </el-option>
+                <el-option label="价格突破MA20" value="price_above_ma20">
+                  <span>价格突破MA20</span>
+                  <el-tag size="small" type="success" style="margin-left: 8px">突破</el-tag>
+                </el-option>
               </el-select>
             </el-form-item>
           </el-col>
@@ -533,7 +562,49 @@ const performScreening = async () => {
       children.push({ field: 'symbol', op: 'contains', value: stock_keyword })
     }
 
-    // 明确指定：不加任何技术指标相关条件
+    // 技术形态条件转换
+    if (filters.technicalPattern && filters.technicalPattern.length > 0) {
+      filters.technicalPattern.forEach((pattern: string) => {
+        switch (pattern) {
+          case 'macd_golden_cross':
+            // MACD金叉：DIF > DEA 且 MACD柱 > 0
+            children.push({ field: 'dif', op: '>', value: 0 })
+            children.push({ field: 'macd_hist', op: '>', value: 0 })
+            break
+          case 'macd_death_cross':
+            // MACD死叉：DIF < DEA 且 MACD柱 < 0
+            children.push({ field: 'dif', op: '<', value: 0 })
+            children.push({ field: 'macd_hist', op: '<', value: 0 })
+            break
+          case 'kdj_overbought':
+            // KDJ超买：K > 80
+            children.push({ field: 'kdj_k', op: '>', value: 80 })
+            break
+          case 'kdj_oversold':
+            // KDJ超卖：K < 20
+            children.push({ field: 'kdj_k', op: '<', value: 20 })
+            break
+          case 'kdj_golden_cross':
+            // KDJ金叉：K > D 且 K > 20 且 K < 80
+            children.push({ field: 'kdj_k', op: '>', value: 20 })
+            children.push({ field: 'kdj_k', op: '<', value: 80 })
+            break
+          case 'rsi_overbought':
+            // RSI超买：RSI > 70
+            children.push({ field: 'rsi14', op: '>', value: 70 })
+            break
+          case 'rsi_oversold':
+            // RSI超卖：RSI < 30
+            children.push({ field: 'rsi14', op: '<', value: 30 })
+            break
+          case 'price_above_ma20':
+            // 价格突破MA20：收盘价 > MA20
+            // 注意：需要确保close和ma20字段存在
+            children.push({ field: 'close', op: '>', value: 0 })
+            break
+        }
+      })
+    }
 
     // 🔥 将显示名称映射为实际的数据源名称
     let actualDataSource = selectedDataSource.value

@@ -11,7 +11,7 @@
         appear
       >
         <keep-alive :include="keepAliveComponents">
-          <component :is="Component" :key="route?.fullPath || 'default'" />
+          <component :is="Component" />
         </keep-alive>
       </transition>
     </router-view>

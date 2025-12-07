@@ -203,10 +203,19 @@ const openArticle = (articleId: string) => {
     .category-card {
       cursor: pointer;
       transition: all 0.3s ease;
-      height: 220px;
+      min-height: 240px;
+      display: flex;
+      flex-direction: column;
       margin-bottom: 20px;
       background: var(--el-fill-color-blank);
       border-color: var(--el-border-color);
+
+      :deep(.el-card__body) {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 24px;
+      }
 
       &:hover {
         transform: translateY(-8px);
@@ -230,11 +239,11 @@ const openArticle = (articleId: string) => {
         color: var(--el-text-color-regular);
         margin-bottom: 16px;
         line-height: 1.6;
-        min-height: 60px;
+        flex: 1;
       }
 
       .el-tag {
-        margin-top: 8px;
+        margin-top: auto;
       }
     }
   }
@@ -252,9 +261,18 @@ const openArticle = (articleId: string) => {
       cursor: pointer;
       transition: all 0.3s ease;
       margin-bottom: 20px;
-      height: 180px;
+      min-height: 200px;
+      display: flex;
+      flex-direction: column;
       background: var(--el-fill-color-blank);
       border-color: var(--el-border-color);
+
+      :deep(.el-card__body) {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 20px;
+      }
 
       &:hover {
         transform: translateY(-4px);
@@ -284,6 +302,7 @@ const openArticle = (articleId: string) => {
         font-size: 14px;
         color: var(--el-text-color-regular);
         line-height: 1.6;
+        flex: 1;
       }
     }
   }

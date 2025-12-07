@@ -589,3 +589,75 @@ async def reset_account(confirm: bool = Query(False), current_user: dict = Depen
     # 重新创建账户
     acc = await _get_or_create_account(current_user["id"])
     return ok({"message": "账户已重置", "cash": acc.get("cash", {})})
+
+
+@router.get("/trades/{code}", response_model=dict)
+async def get_stock_trades(
+    code: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """获取指定股票的交易记录和均价"""
+    db = get_mongo_db()
+    
+    # 检测市场类型并标准化代码
+    market, normalized_code = _detect_market_and_code(code)
+    
+    # 查询该股票的所有交易记录
+    trades = await db["paper_trades"].find({
+        "user_id": current_user["id"],
+        "code": normalized_code,
+        "market": market
+    }).sort("timestamp", 1).to_list(None)
+    
+    # 计算均价（考虑所有买入和卖出，按数量加权计算持仓成本）
+    avg_price = None
+    total_cost = 0.0  # 总成本
+    total_quantity = 0  # 当前持有数量
+    
+    for trade in trades:
+        side = trade.get("side")
+        quantity = trade.get("quantity", 0)
+        price = trade.get("price", 0)
+        
+        if side == "buy":
+            # 买入：增加成本和数量
+            total_cost += price * quantity
+            total_quantity += quantity
+        elif side == "sell":
+            # 卖出：按当前均价减少成本和数量
+            if total_quantity > 0:
+                current_avg = total_cost / total_quantity
+                total_cost -= current_avg * quantity
+                total_quantity -= quantity
+    
+    # 计算最终均价
+    if total_quantity > 0:
+        avg_price = total_cost / total_quantity
+    
+    # 计算总买入数量（用于展示）
+    total_buy_quantity = sum(
+        trade.get("quantity", 0) 
+        for trade in trades 
+        if trade.get("side") == "buy"
+    )
+    
+    # 格式化返回数据
+    trades_list = []
+    for t in trades:
+        trades_list.append({
+            "side": t.get("side"),
+            "quantity": t.get("quantity"),
+            "price": t.get("price"),
+            "amount": t.get("amount"),
+            "timestamp": t.get("timestamp"),
+            "pnl": t.get("pnl", 0)
+        })
+    
+    return ok({
+        "code": normalized_code,
+        "market": market,
+        "trades": trades_list,
+        "avg_price": avg_price,
+        "total_buy_quantity": total_buy_quantity,
+        "current_quantity": total_quantity  # 当前持有数量
+    })

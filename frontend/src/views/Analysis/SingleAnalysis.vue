@@ -35,20 +35,33 @@
                 <el-row :gutter="16">
                   <el-col :span="12">
                     <el-form-item label="股票代码" required>
-                      <el-input
+                      <el-autocomplete
                         v-model="analysisForm.stockCode"
-                        placeholder="如：000001、AAPL、700、1810"
+                        :fetch-suggestions="queryStockSearch"
+                        placeholder="输入股票代码或名称搜索（如：600519 或 茅台）"
+                        :trigger-on-focus="false"
                         clearable
                         size="large"
                         class="stock-input"
                         :class="{ 'is-error': stockCodeError }"
+                        @select="handleStockSelect"
                         @blur="validateStockCodeInput"
-                        @input="onStockCodeInput"
+                        @change="onStockCodeChange"
+                        style="width: 100%"
                       >
                         <template #prefix>
                           <el-icon><TrendCharts /></el-icon>
                         </template>
-                      </el-input>
+                        <template #default="{ item }">
+                          <div class="stock-suggest-item">
+                            <span class="stock-code">{{ item.code }}</span>
+                            <span class="stock-name">{{ item.name }}</span>
+                            <el-tag v-if="item.market" size="small" style="margin-left: 8px">
+                              {{ item.market }}
+                            </el-tag>
+                          </div>
+                        </template>
+                      </el-autocomplete>
                       <div v-if="stockCodeError" class="error-message">
                         <el-icon><WarningFilled /></el-icon>
                         {{ stockCodeError }}
@@ -831,12 +844,70 @@ const disabledDate = (time: Date) => {
   return time.getTime() > Date.now()
 }
 
-// 股票代码输入时的处理
-const onStockCodeInput = () => {
-  // 清除错误信息
-  stockCodeError.value = ''
-  // 显示格式提示
-  stockCodeHelp.value = getStockCodeFormatHelp(analysisForm.market)
+// 🔥 股票搜索（自动完成）
+const queryStockSearch = (queryString: string, cb: (suggestions: any[]) => void) => {
+  if (!queryString || queryString.trim().length === 0) {
+    cb([])
+    return
+  }
+
+  // 异步搜索
+  stocksApi.searchStocks(queryString.trim(), 10)
+    .then(res => {
+      if (res.success && res.data && Array.isArray(res.data)) {
+        const suggestions = res.data.map((item: any) => ({
+          value: item.symbol || item.code || '',
+          code: item.symbol || item.code || '',
+          name: item.name || '',
+          market: item.market || 'CN'
+        }))
+        cb(suggestions)
+      } else {
+        cb([])
+      }
+    })
+    .catch(error => {
+      console.warn('搜索股票失败:', error)
+      cb([])
+    })
+}
+
+// 选择股票后的处理
+const handleStockSelect = (item: any) => {
+  if (item && item.code) {
+    analysisForm.stockCode = item.code
+    
+    // 自动识别市场类型
+    if (item.market) {
+      const marketMap: Record<string, MarketType> = {
+        'CN': 'A股',
+        'HK': '港股',
+        'US': '美股'
+      }
+      const detectedMarket = marketMap[item.market] || analysisForm.market
+      if (detectedMarket !== analysisForm.market) {
+        analysisForm.market = detectedMarket
+        ElMessage.success(`已自动识别为${detectedMarket}`)
+      }
+    }
+    
+    // 验证股票代码
+    validateStockCodeInput()
+  }
+}
+
+// 代码输入框变化时的处理
+const onStockCodeChange = () => {
+  // 如果用户手动清空或修改代码，清除错误和提示
+  if (!analysisForm.stockCode) {
+    stockCodeError.value = ''
+    stockCodeHelp.value = ''
+  } else {
+    // 清除错误信息
+    stockCodeError.value = ''
+    // 显示格式提示
+    stockCodeHelp.value = getStockCodeFormatHelp(analysisForm.market)
+  }
 }
 
 // 市场类型变更时的处理
@@ -2111,7 +2182,13 @@ const checkModelSuitability = async () => {
         5: '全面分析，专业投资决策'
       }
 
-      const message = `${depthDescriptions[analysisForm.researchDepth] || '标准分析'}\n\n推荐模型配置：\n• 快速模型：${quickDisplayName}\n• 深度模型：${deepDisplayName}\n\n${reason}`
+      const message = `${depthDescriptions[analysisForm.researchDepth] || '标准分析'}
+
+推荐模型配置：
+• 快速模型：${quickDisplayName}
+• 深度模型：${deepDisplayName}
+
+${reason}`
 
       modelRecommendation.value = {
         title: '💡 模型推荐',
@@ -3397,5 +3474,24 @@ onMounted(async () => {
     line-height: 1.6;
     color: #e6a23c;
   }
+}
+
+/* 股票搜索建议样式 */
+.stock-suggest-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+}
+
+.stock-code {
+  font-family: monospace;
+  font-weight: 600;
+  margin-right: 12px;
+  min-width: 80px;
+  color: #409EFF;
+}
+
+.stock-name {
+  color: #606266;
 }
 </style>

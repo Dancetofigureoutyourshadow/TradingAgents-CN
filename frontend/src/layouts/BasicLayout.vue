@@ -62,7 +62,7 @@
               appear
             >
               <keep-alive :include="keepAliveComponents">
-                <component :is="Component" :key="route.fullPath" />
+                <component :is="Component" :key="route.path" />
               </keep-alive>
             </transition>
           </router-view>
@@ -99,7 +99,16 @@ const keepAliveComponents = computed(() => [
   'Dashboard',
   'StockScreening',
   'AnalysisHistory',
-  'QueueManagement'
+  'QueueManagement',
+  'SettingsHome',
+  'ConfigManagement',
+  'DatabaseManagement',
+  'OperationLogs',
+  'LogManagement',
+  'MultiSourceSync',
+  'CacheManagement',
+  'UsageStatistics',
+  'SchedulerManagement'
 ])
 
 // 移动端判断

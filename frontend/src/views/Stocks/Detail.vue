@@ -108,20 +108,109 @@
     </el-card>
 
     <el-row :gutter="16" class="body">
-      <el-col :span="18">
+      <el-col :span="20">
         <!-- K线蜡烛图 -->
         <el-card shadow="hover">
           <template #header>
             <div class="card-hd">
               <div>价格K线</div>
-              <div class="periods">
+              <div class="kline-controls">
+                <!-- 周期选择 -->
                 <el-segmented v-model="period" :options="periodOptions" size="small" />
+                
+                <!-- 主图指标选择 -->
+                <el-segmented 
+                  v-model="mainIndicator" 
+                  :options="mainIndicatorOptions" 
+                  size="small" 
+                  style="margin-left: 12px"
+                />
+                
+                <!-- 均线管理 -->
+                <el-dropdown trigger="click" style="margin-left: 12px" v-if="mainIndicator === 'MA' || mainIndicator === 'BOTH'">
+                  <el-button size="small" :icon="TrendCharts">
+                    均线 <el-icon class="el-icon--right"><arrow-down /></el-icon>
+                  </el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item v-for="(ma, idx) in maConfigs" :key="idx">
+                        <div class="ma-item">
+                          <el-checkbox v-model="ma.enabled" @change="toggleMA(idx)">
+                            <span :style="{ color: ma.color, fontWeight: 'bold' }">MA{{ ma.period }}</span>
+                          </el-checkbox>
+                          <div class="ma-actions">
+                            <el-button link size="small" @click="editMA(ma)">编辑</el-button>
+                            <el-button link size="small" type="danger" @click="deleteMA(idx)">删除</el-button>
+                          </div>
+                        </div>
+                      </el-dropdown-item>
+                      <el-dropdown-item divided>
+                        <el-button link size="small" @click="addMA">+ 添加均线</el-button>
+                      </el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
+
+                <!-- 技术指标选择 -->
+                <el-select 
+                  v-model="indicators" 
+                  multiple 
+                  collapse-tags
+                  collapse-tags-tooltip
+                  :max-collapse-tags="2"
+                  placeholder="选择指标" 
+                  size="small" 
+                  style="width: 180px; margin-left: 12px"
+                  @change="onIndicatorChange"
+                >
+                  <el-option
+                    v-for="item in availableIndicators"
+                    :key="item.value"
+                    :label="item.label"
+                    :value="item.value"
+                    :disabled="!indicators.includes(item.value) && indicators.length >= maxIndicators"
+                  />
+                </el-select>
+                
+                <!-- 交易记录按钮 -->
+                <el-button 
+                  v-if="stockTrades.length > 0" 
+                  size="small" 
+                  @click="showTradesDialog = true"
+                  style="margin-left: 12px"
+                >
+                  <el-icon><Document /></el-icon>
+                  交易记录 ({{ stockTrades.length }})
+                </el-button>
               </div>
             </div>
           </template>
           <div class="kline-container">
-            <v-chart class="k-chart" :option="kOption" autoresize />
-            <div class="legend">当前周期：{{ period }} · 数据源：{{ klineSource || '-' }} · 最近：{{ lastKTime || '-' }} · 收：{{ fmtPrice(lastKClose) }}</div>
+            <!-- 加载中提示 -->
+            <div v-if="isLoadingMore" class="loading-overlay">
+              <el-icon class="is-loading" :size="20"><Refresh /></el-icon>
+              <span>正在加载更多历史数据...</span>
+            </div>
+            <v-chart 
+              ref="klineChart" 
+              class="k-chart" 
+              :option="kOption" 
+              autoresize 
+              @datazoom="onDataZoom"
+            />
+            <div class="kline-footer">
+              <div class="legend">当前周期：{{ period }} · 数据源：{{ klineSource || '-' }} · 最近：{{ lastKTime || '-' }} · 收：{{ fmtPrice(lastKClose) }}</div>
+              <el-button 
+                v-if="hasMoreData" 
+                size="small" 
+                :loading="isLoadingMore" 
+                @click="fetchKline(true)"
+                :icon="Refresh"
+              >
+                加载更多历史数据
+              </el-button>
+              <el-tag v-else size="small" type="info">全部数据已加载</el-tag>
+            </div>
           </div>
         </el-card>
 
@@ -239,7 +328,7 @@
 
       </el-col>
 
-      <el-col :span="6">
+      <el-col :span="4">
         <!-- 基本面快照 -->
         <el-card shadow="hover">
           <template #header><div class="card-hd">基本面快照</div></template>
@@ -352,6 +441,95 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 均线编辑对话框 -->
+    <el-dialog
+      v-model="showMADialog"
+      :title="editingMA && maConfigs.find(m => m.period === editingMA.period) ? '编辑均线' : '添加均线'"
+      width="400px"
+    >
+      <el-form v-if="editingMA" label-width="80px">
+        <el-form-item label="周期">
+          <el-input-number v-model="editingMA.period" :min="1" :max="250" />
+        </el-form-item>
+        <el-form-item label="颜色">
+          <el-color-picker v-model="editingMA.color" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showMADialog = false">取消</el-button>
+        <el-button type="primary" @click="saveMA">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 交易记录对话框 -->
+    <el-dialog
+      v-model="showTradesDialog"
+      title="📊 模拟交易记录"
+      width="800px"
+    >
+      <div class="trades-dialog">
+        <div class="trades-summary">
+          <el-descriptions :column="3" border>
+            <el-descriptions-item label="股票代码">
+              <el-tag>{{ code }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="交易次数">
+              <el-tag type="info">{{ stockTrades.length }} 笔</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="持仓成本">
+              <el-tag v-if="avgPrice" type="warning">￥{{ avgPrice.toFixed(2) }}</el-tag>
+              <span v-else>-</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="当前持仓">
+              <el-tag type="info">{{ currentQuantity }} 股</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="总持仓盈亏">
+              <el-tag v-if="avgPrice && quote.price && currentQuantity > 0" :type="getProfitTagType()">
+                {{ formatProfit() }}
+              </el-tag>
+              <span v-else>-</span>
+            </el-descriptions-item>
+          </el-descriptions>
+          <div v-if="avgPrice" class="trades-note">
+            <el-icon><InfoFilled /></el-icon>
+            持仓成本为按数量加权计算的平均成本，已考虑所有买入和卖出交易
+          </div>
+        </div>
+
+        <el-divider />
+
+        <el-table :data="stockTrades" stripe border style="width: 100%">
+          <el-table-column label="时间" width="180">
+            <template #default="{ row }">
+              {{ formatTradeTime(row.timestamp) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="类型" width="80" align="center">
+            <template #default="{ row }">
+              <el-tag :type="row.side === 'buy' ? 'danger' : 'success'" size="small">
+                {{ row.side === 'buy' ? '买入' : '卖出' }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="数量" prop="quantity" width="120" align="right" />
+          <el-table-column label="价格" width="140" align="right">
+            <template #default="{ row }">
+              ￥{{ row.price.toFixed(2) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="成交金额" align="right">
+            <template #default="{ row }">
+              ￥{{ row.amount.toFixed(2) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+
+      <template #footer>
+        <el-button @click="showTradesDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -359,15 +537,16 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { TrendCharts, Star, Refresh, Link, Document, Clock, Reading, CreditCard, Delete } from '@element-plus/icons-vue'
+import { TrendCharts, Star, Refresh, Link, Document, Clock, Reading, CreditCard, Delete, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import { stocksApi } from '@/api/stocks'
 import { analysisApi } from '@/api/analysis'
 import { ApiClient } from '@/api/request'
 import { stockSyncApi } from '@/api/stockSync'
 import { clearAllCache } from '@/api/cache'
+import { paperApi } from '@/api/paper'
 import { use as echartsUse } from 'echarts/core'
-import { CandlestickChart } from 'echarts/charts'
+import { CandlestickChart, LineChart, BarChart } from 'echarts/charts'
 
 import { GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
@@ -377,7 +556,7 @@ import { favoritesApi } from '@/api/favorites'
 import { useNotificationStore } from '@/stores/notifications'
 
 
-echartsUse([CandlestickChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent, CanvasRenderer])
+echartsUse([CandlestickChart, LineChart, BarChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent, CanvasRenderer])
 
 const route = useRoute()
 const router = useRouter()
@@ -713,6 +892,26 @@ async function fetchSyncStatus() {
   }
 }
 
+// 获取模拟交易数据
+async function fetchStockTrades() {
+  try {
+    const res = await paperApi.getStockTrades(code.value)
+    if (res.success && res.data) {
+      stockTrades.value = res.data.trades || []
+      avgPrice.value = res.data.avg_price
+      currentQuantity.value = res.data.current_quantity || 0  // 当前持有数量
+      console.log(`📊 获取到 ${code.value} 的交易记录: ${stockTrades.value.length} 条, 均价: ${avgPrice.value}, 持仓: ${currentQuantity.value}`)
+      // 重新渲染图表以显示均价线
+      updateKlineChart()
+    }
+  } catch (e) {
+    console.warn('获取模拟交易数据失败', e)
+    stockTrades.value = []
+    avgPrice.value = null
+    currentQuantity.value = 0
+  }
+}
+
 let timer: any = null
 async function checkFavorite() {
   try {
@@ -732,7 +931,8 @@ onMounted(async () => {
     fetchNews(),
     checkFavorite(),
     fetchLatestAnalysis(),  // 获取最新的历史分析报告
-    fetchSyncStatus()  // 获取同步状态
+    fetchSyncStatus(),  // 获取同步状态
+    fetchStockTrades()  // 获取模拟交易数据
   ])
   // 每30秒刷新一次报价
   timer = setInterval(fetchQuote, 30000)
@@ -747,6 +947,57 @@ const period = ref('日K')
 
 const klineSource = ref<string | undefined>(undefined)
 
+// 均线配置
+interface MAConfig {
+  period: number
+  color: string
+  enabled: boolean
+}
+
+const maConfigs = ref<MAConfig[]>([
+  { period: 5, color: '#FF6B6B', enabled: true },
+  { period: 10, color: '#4ECDC4', enabled: true },
+  { period: 20, color: '#FFD93D', enabled: true },
+  { period: 60, color: '#95E1D3', enabled: true }
+])
+
+const showMADialog = ref(false)
+const editingMA = ref<MAConfig | null>(null)
+
+// 主图指标配置（均线/BOLL等）
+const mainIndicator = ref<'MA' | 'BOLL' | 'BOTH'>('MA') // 默认显示均线
+const mainIndicatorOptions = [
+  { value: 'MA', label: '仅均线' },
+  { value: 'BOLL', label: '仅BOLL' },
+  { value: 'BOTH', label: '均线+BOLL' }
+]
+
+// 技术指标配置
+const indicators = ref<string[]>(['MACD', 'VOL']) // 默认显示MACD和成交量
+const availableIndicators = [
+  { value: 'MACD', label: 'MACD' },
+  { value: 'RSI', label: 'RSI' },
+  { value: 'KDJ', label: 'KDJ' },
+  { value: 'VOL', label: '成交量' }
+]
+const maxIndicators = 2 // 最多显示2个副图
+
+// K线原始数据
+const klineData = ref<any[]>([])
+const isLoadingMore = ref(false) // 是否正在加载更多数据
+const hasMoreData = ref(true) // 是否还有更多数据
+const currentLimit = ref(200) // 当前已加载的数据量
+const klineChart = ref<any>(null) // ECharts 实例引用
+const lastDataZoomStart = ref(0) // 上次 dataZoom 的 start 值
+const savedDataZoomState = ref<{ start: number; end: number } | null>(null) // 保存的 dataZoom 状态
+
+// 模拟交易数据
+const stockTrades = ref<any[]>([])
+const avgPrice = ref<number | null>(null)
+const currentQuantity = ref<number>(0)  // 当前持有数量
+const showAvgPrice = ref(true) // 是否显示均价线
+const showTradesDialog = ref(false) // 是否显示交易记录对话框
+
 function periodLabelToParam(p: string): string {
   if (p.includes('5')) return '5m'
   if (p.includes('15')) return '15m'
@@ -758,55 +1009,790 @@ function periodLabelToParam(p: string): string {
 }
 
 // 当周期切换时刷新K线
-watch(period, () => { fetchKline() })
+watch(period, () => { 
+  // 重置加载状态
+  currentLimit.value = 200
+  hasMoreData.value = true
+  klineData.value = []
+  fetchKline() 
+})
 
-async function fetchKline() {
+// 当均线配置或指标配置改变时，重新渲染图表
+watch([maConfigs, indicators, mainIndicator], () => { updateKlineChart() }, { deep: true })
+
+// 处理指标选择变更
+function onIndicatorChange(value: string[]) {
+  // 限制最多只能选择 maxIndicators 个指标
+  if (value.length > maxIndicators) {
+    ElMessage.warning(`最多只能同时显示 ${maxIndicators} 个副图指标`)
+    // 保留最后选择的 maxIndicators 个
+    indicators.value = value.slice(-maxIndicators)
+  }
+}
+
+// 监听 dataZoom 事件，当拖动到最左侧时自动加载更多数据
+function onDataZoom(params: any) {
+  // params.batch 包含所有 dataZoom 组件的状态
+  if (!params || !params.batch || params.batch.length === 0) return
+  
+  const dataZoom = params.batch[0]
+  const currentStart = dataZoom.start || 0
+  const currentEnd = dataZoom.end || 100
+  
+  // 保存当前的 dataZoom 状态
+  savedDataZoomState.value = { start: currentStart, end: currentEnd }
+  
+  // 当拖动到最左侧（start <= 5）且还有更多数据时，自动加载
+  if (currentStart <= 5 && hasMoreData.value && !isLoadingMore.value) {
+    // 防止频繁触发：只有当 start 从大于 5 变为小于等于 5 时才触发
+    if (lastDataZoomStart.value > 5) {
+      console.log('🔄 检测到滚动到最左侧，自动加载更多数据...')
+      fetchKline(true)
+    }
+  }
+  
+  lastDataZoomStart.value = currentStart
+}
+
+// 计算均线数据
+function calculateMA(data: number[], period: number): (number | null)[] {
+  const result: (number | null)[] = []
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) {
+      result.push(null)
+    } else {
+      let sum = 0
+      for (let j = 0; j < period; j++) {
+        sum += data[i - j]
+      }
+      result.push(+(sum / period).toFixed(2))
+    }
+  }
+  return result
+}
+
+// 计算MACD
+function calculateMACD(data: number[]) {
+  const ema12: number[] = []
+  const ema26: number[] = []
+  const dif: number[] = []
+  const dea: number[] = []
+  const macd: number[] = []
+
+  let ema12Val = data[0]
+  let ema26Val = data[0]
+  let deaVal = 0
+
+  for (let i = 0; i < data.length; i++) {
+    ema12Val = (data[i] * 2 + ema12Val * 11) / 13
+    ema26Val = (data[i] * 2 + ema26Val * 25) / 27
+    ema12.push(ema12Val)
+    ema26.push(ema26Val)
+
+    const difVal = ema12Val - ema26Val
+    dif.push(difVal)
+
+    deaVal = (difVal * 2 + deaVal * 8) / 10
+    dea.push(deaVal)
+
+    macd.push((difVal - deaVal) * 2)
+  }
+
+  return { dif, dea, macd }
+}
+
+// 计算RSI
+function calculateRSI(data: number[], period: number = 14) {
+  const rsi: (number | null)[] = []
+  let avgGain = 0
+  let avgLoss = 0
+
+  for (let i = 0; i < data.length; i++) {
+    if (i === 0) {
+      rsi.push(null)
+      continue
+    }
+
+    const change = data[i] - data[i - 1]
+    const gain = change > 0 ? change : 0
+    const loss = change < 0 ? -change : 0
+
+    if (i < period) {
+      avgGain += gain
+      avgLoss += loss
+      if (i === period - 1) {
+        avgGain /= period
+        avgLoss /= period
+      }
+      rsi.push(null)
+    } else {
+      avgGain = (avgGain * (period - 1) + gain) / period
+      avgLoss = (avgLoss * (period - 1) + loss) / period
+      const rs = avgLoss === 0 ? 100 : avgGain / avgLoss
+      rsi.push(+(100 - (100 / (1 + rs))).toFixed(2))
+    }
+  }
+
+  return rsi
+}
+
+// 计算KDJ
+function calculateKDJ(high: number[], low: number[], close: number[], period: number = 9) {
+  const rsv: number[] = []
+  const k: number[] = []
+  const d: number[] = []
+  const j: number[] = []
+
+  let kVal = 50
+  let dVal = 50
+
+  for (let i = 0; i < close.length; i++) {
+    if (i < period - 1) {
+      rsv.push(50)
+      k.push(50)
+      d.push(50)
+      j.push(50)
+    } else {
+      const periodHigh = Math.max(...high.slice(i - period + 1, i + 1))
+      const periodLow = Math.min(...low.slice(i - period + 1, i + 1))
+      const rsvVal = periodHigh === periodLow ? 50 : ((close[i] - periodLow) / (periodHigh - periodLow)) * 100
+      rsv.push(rsvVal)
+
+      kVal = (kVal * 2 + rsvVal) / 3
+      dVal = (dVal * 2 + kVal) / 3
+      const jVal = 3 * kVal - 2 * dVal
+
+      k.push(+kVal.toFixed(2))
+      d.push(+dVal.toFixed(2))
+      j.push(+jVal.toFixed(2))
+    }
+  }
+
+  return { k, d, j }
+}
+
+// 计算BOLL（布林带）
+function calculateBOLL(data: number[], period: number = 20, multiplier: number = 2) {
+  const middle: (number | null)[] = []  // 中轨（MA）
+  const upper: (number | null)[] = []   // 上轨
+  const lower: (number | null)[] = []   // 下轨
+  
+  for (let i = 0; i < data.length; i++) {
+    if (i < period - 1) {
+      middle.push(null)
+      upper.push(null)
+      lower.push(null)
+    } else {
+      // 计算中轨（简单移动平均）
+      let sum = 0
+      for (let j = 0; j < period; j++) {
+        sum += data[i - j]
+      }
+      const ma = sum / period
+      
+      // 计算标准差
+      let variance = 0
+      for (let j = 0; j < period; j++) {
+        variance += Math.pow(data[i - j] - ma, 2)
+      }
+      const stdDev = Math.sqrt(variance / period)
+      
+      middle.push(+ma.toFixed(2))
+      upper.push(+(ma + multiplier * stdDev).toFixed(2))
+      lower.push(+(ma - multiplier * stdDev).toFixed(2))
+    }
+  }
+  
+  return { middle, upper, lower }
+}
+
+// 更新K线图表
+function updateKlineChart() {
+  if (klineData.value.length === 0) return
+
+  const category = klineData.value.map((item: any) => 
+    String(item.time || item.trade_time || item.trade_date || '')
+  )
+  const values = klineData.value.map((item: any) => [
+    Number(item.open ?? NaN),
+    Number(item.close ?? NaN),
+    Number(item.low ?? NaN),
+    Number(item.high ?? NaN)
+  ])
+  const closeData = klineData.value.map((item: any) => Number(item.close ?? NaN))
+  const volumeData = klineData.value.map((item: any) => Number(item.volume ?? 0))
+  const highData = klineData.value.map((item: any) => Number(item.high ?? NaN))
+  const lowData = klineData.value.map((item: any) => Number(item.low ?? NaN))
+
+  // 基础系列：K线
+  const series: any[] = [
+    {
+      type: 'candlestick',
+      name: 'K线',
+      data: values,
+      itemStyle: {
+        color: '#ef4444',
+        color0: '#16a34a',
+        borderColor: '#ef4444',
+        borderColor0: '#16a34a'
+      }
+    }
+  ]
+
+  // 添加主图指标（均线或BOLL）
+  const legend: string[] = ['K线']
+  
+  // 根据选择添加均线
+  if (mainIndicator.value === 'MA' || mainIndicator.value === 'BOTH') {
+    const enabledMAs = maConfigs.value.filter(ma => ma.enabled)
+    enabledMAs.forEach(ma => {
+      const maData = calculateMA(closeData, ma.period)
+      series.push({
+        type: 'line',
+        name: `MA${ma.period}`,
+        data: maData,
+        smooth: true,
+        showSymbol: false,
+        lineStyle: {
+          width: 1.5,
+          color: ma.color
+        },
+        z: 1  // 确保在K线上方
+      })
+      legend.push(`MA${ma.period}`)
+    })
+  }
+  
+  // 根据选择添加BOLL线
+  if (mainIndicator.value === 'BOLL' || mainIndicator.value === 'BOTH') {
+    const bollData = calculateBOLL(closeData, 20, 2)
+    series.push(
+      {
+        type: 'line',
+        name: 'BOLL-上轨',
+        data: bollData.upper,
+        showSymbol: false,
+        lineStyle: { width: 1, color: '#FF6B6B', type: 'dashed' },
+        z: 1
+      },
+      {
+        type: 'line',
+        name: 'BOLL-中轨',
+        data: bollData.middle,
+        showSymbol: false,
+        lineStyle: { width: 1.5, color: '#FFD700' },
+        z: 1
+      },
+      {
+        type: 'line',
+        name: 'BOLL-下轨',
+        data: bollData.lower,
+        showSymbol: false,
+        lineStyle: { width: 1, color: '#16a34a', type: 'dashed' },
+        z: 1,
+        areaStyle: {
+          color: {
+            type: 'linear',
+            x: 0,
+            y: 0,
+            x2: 0,
+            y2: 1,
+            colorStops: [
+              { offset: 0, color: 'rgba(255, 107, 107, 0.05)' },
+              { offset: 1, color: 'rgba(22, 163, 74, 0.05)' }
+            ]
+          },
+          origin: 'start'
+        }
+      }
+    )
+    legend.push('BOLL-上轨', 'BOLL-中轨', 'BOLL-下轨')
+  }
+  
+  // 添加模拟交易均价线
+  if (showAvgPrice.value && avgPrice.value !== null) {
+    const avgPriceData = new Array(category.length).fill(avgPrice.value)
+    series.push({
+      type: 'line',
+      name: '成本价',
+      data: avgPriceData,
+      showSymbol: false,
+      lineStyle: { 
+        width: 2, 
+        color: '#FF8C00',  // 橙色
+        type: 'dashed'  // 虚线
+      },
+      z: 2,  // 确保在最上层
+      markLine: {
+        symbol: 'none',
+        label: {
+          show: true,
+          position: 'start',  // 在最左侧显示
+          formatter: `成本: ${avgPrice.value.toFixed(2)}`,
+          color: '#FF8C00',
+          fontSize: 12,
+          fontWeight: 'bold'
+        },
+        lineStyle: {
+          color: '#FF8C00',
+          width: 2,
+          type: 'dashed'
+        },
+        data: [{
+          yAxis: avgPrice.value
+        }]
+      }
+    })
+    legend.push('成本价')
+  }
+
+  // 计算网格布局
+  // 根据副图数量动态调整主图高度和副图位置
+  const subplotCount = Math.min(indicators.value.length, maxIndicators)
+  const mainChartHeight = subplotCount === 0 ? 360 : (subplotCount === 1 ? 280 : 240)
+  const subplotHeight = 80
+  const gridGap = 20 // 图表间距
+  
+  const grids: any[] = [{ left: 60, right: 60, top: 60, height: mainChartHeight }]
+  const xAxes: any[] = [
+    {
+      type: 'category',
+      data: category,
+      gridIndex: 0,
+      boundaryGap: true,
+      axisLine: { onZero: false },
+      splitLine: { show: false },
+      axisLabel: { show: false }
+    }
+  ]
+  const yAxes: any[] = [
+    {
+      scale: true,
+      gridIndex: 0,
+      splitLine: { show: true },
+      axisLabel: { inside: false }
+    }
+  ]
+  
+  // 计算 dataZoom 的位置，确保不与副图重叠
+  const totalChartHeight = mainChartHeight + 60 + (subplotCount * (subplotHeight + gridGap))
+  const dataZoomTop = totalChartHeight + 10 // 留出10px间距
+  
+  const dataZooms: any[] = [
+    { type: 'inside', xAxisIndex: [0], start: 70, end: 100 },
+    { 
+      show: true, 
+      xAxisIndex: [0], 
+      type: 'slider', 
+      bottom: 10, // 使用 bottom 而不是 top，确保始终在底部
+      height: 20,
+      start: 70, 
+      end: 100 
+    }
+  ]
+
+  let currentTop = mainChartHeight + 60 + gridGap
+  let gridIndex = 1
+
+  // 添加指标副图
+  indicators.value.forEach(indicator => {
+    if (indicator === 'VOL') {
+      grids.push({ left: 60, right: 60, top: currentTop, height: subplotHeight })
+      xAxes.push({
+        type: 'category',
+        data: category,
+        gridIndex,
+        boundaryGap: true,
+        axisLine: { onZero: false },
+        splitLine: { show: false },
+        axisLabel: { show: false }
+      })
+      yAxes.push({
+        scale: false,  // 不使用scale，使用固定范围
+        gridIndex,
+        splitLine: { show: true },
+        min: 0,  // 从0开始
+        max: (value: any) => {
+          // 动态计算最大值，留出20%空间
+          return value.max * 1.2
+        },
+        axisLabel: { 
+          inside: false,
+          formatter: (value: number) => {
+            // 成交量格式化：亿/万
+            if (value >= 100000000) return (value / 100000000).toFixed(1) + '亿'
+            if (value >= 10000) return (value / 10000).toFixed(1) + '万'
+            return value.toFixed(0)
+          }
+        }
+      })
+      series.push({
+        type: 'bar',
+        name: '成交量',
+        data: volumeData,
+        xAxisIndex: gridIndex,
+        yAxisIndex: gridIndex,
+        itemStyle: {
+          color: (params: any) => {
+            const idx = params.dataIndex
+            if (idx === 0) return '#ef4444'
+            return values[idx][1] >= values[idx][0] ? '#ef4444' : '#16a34a'
+          }
+        }
+      })
+      legend.push('成交量')
+      dataZooms[0].xAxisIndex.push(gridIndex)
+      dataZooms[1].xAxisIndex.push(gridIndex)
+      currentTop += subplotHeight + gridGap
+      gridIndex++
+    } else if (indicator === 'MACD') {
+      const macdData = calculateMACD(closeData)
+      grids.push({ left: 60, right: 60, top: currentTop, height: subplotHeight })
+      xAxes.push({
+        type: 'category',
+        data: category,
+        gridIndex,
+        boundaryGap: true,
+        axisLine: { onZero: false },
+        splitLine: { show: false },
+        axisLabel: { show: false }
+      })
+      yAxes.push({
+        scale: true,
+        gridIndex,
+        splitLine: { show: true },
+        axisLabel: { inside: false }
+      })
+      series.push(
+        {
+          type: 'line',
+          name: 'DIF',
+          data: macdData.dif,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#FFD700' }
+        },
+        {
+          type: 'line',
+          name: 'DEA',
+          data: macdData.dea,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#00CED1' }
+        },
+        {
+          type: 'bar',
+          name: 'MACD',
+          data: macdData.macd,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          itemStyle: {
+            color: (params: any) => params.data >= 0 ? '#ef4444' : '#16a34a'
+          }
+        }
+      )
+      legend.push('DIF', 'DEA', 'MACD')
+      dataZooms[0].xAxisIndex.push(gridIndex)
+      dataZooms[1].xAxisIndex.push(gridIndex)
+      currentTop += subplotHeight + gridGap
+      gridIndex++
+    } else if (indicator === 'RSI') {
+      const rsiData = calculateRSI(closeData, 14)
+      grids.push({ left: 60, right: 60, top: currentTop, height: subplotHeight })
+      xAxes.push({
+        type: 'category',
+        data: category,
+        gridIndex,
+        boundaryGap: true,
+        axisLine: { onZero: false },
+        splitLine: { show: false },
+        axisLabel: { show: false }
+      })
+      yAxes.push({
+        scale: false,
+        gridIndex,
+        min: 0,
+        max: 100,
+        splitLine: { show: true },
+        axisLabel: { inside: false }
+      })
+      series.push(
+        {
+          type: 'line',
+          name: 'RSI',
+          data: rsiData,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#9C27B0' },
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            data: [
+              { yAxis: 70, lineStyle: { color: '#ef4444', type: 'dashed' } },
+              { yAxis: 30, lineStyle: { color: '#16a34a', type: 'dashed' } }
+            ]
+          }
+        }
+      )
+      legend.push('RSI')
+      dataZooms[0].xAxisIndex.push(gridIndex)
+      dataZooms[1].xAxisIndex.push(gridIndex)
+      currentTop += subplotHeight + gridGap
+      gridIndex++
+    } else if (indicator === 'KDJ') {
+      const kdjData = calculateKDJ(highData, lowData, closeData, 9)
+      grids.push({ left: 60, right: 60, top: currentTop, height: subplotHeight })
+      xAxes.push({
+        type: 'category',
+        data: category,
+        gridIndex,
+        boundaryGap: true,
+        axisLine: { onZero: false },
+        splitLine: { show: false },
+        axisLabel: { show: gridIndex === grids.length - 1 }
+      })
+      yAxes.push({
+        scale: false,
+        gridIndex,
+        min: 0,
+        max: 100,
+        splitLine: { show: true },
+        axisLabel: { inside: false }
+      })
+      series.push(
+        {
+          type: 'line',
+          name: 'K',
+          data: kdjData.k,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#FF6B6B' }
+        },
+        {
+          type: 'line',
+          name: 'D',
+          data: kdjData.d,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#4ECDC4' }
+        },
+        {
+          type: 'line',
+          name: 'J',
+          data: kdjData.j,
+          xAxisIndex: gridIndex,
+          yAxisIndex: gridIndex,
+          showSymbol: false,
+          lineStyle: { width: 1.5, color: '#FFD93D' }
+        }
+      )
+      legend.push('K', 'D', 'J')
+      dataZooms[0].xAxisIndex.push(gridIndex)
+      dataZooms[1].xAxisIndex.push(gridIndex)
+      currentTop += subplotHeight + gridGap
+      gridIndex++
+    }
+  })
+
+  // 显示最后一个grid的xAxis标签，并留出空间给 dataZoom
+  if (xAxes.length > 1) {
+    xAxes[xAxes.length - 1].axisLabel.show = true
+  } else {
+    // 如果没有副图，主图显示x轴标签
+    xAxes[0].axisLabel.show = true
+  }
+
+  // 如果有保存的 dataZoom 状态（加载更多数据时），恢复位置
+  if (savedDataZoomState.value && isLoadingMore.value) {
+    // 计算新的位置：保持可视区域的数据条数不变
+    const oldTotalData = klineData.value.length - 200 // 加载前的数据总量
+    const newTotalData = klineData.value.length // 加载后的数据总量
+    const addedDataCount = newTotalData - oldTotalData // 新增的数据量
+    
+    if (addedDataCount > 0 && oldTotalData > 0) {
+      // 计算原来显示的数据条数
+      const oldVisibleRange = (savedDataZoomState.value.end - savedDataZoomState.value.start) / 100 * oldTotalData
+      
+      // 新的 start 位置需要向后偏移，以保持相同的可视数据
+      const newStart = (savedDataZoomState.value.start / 100 * oldTotalData + addedDataCount) / newTotalData * 100
+      const newEnd = newStart + (oldVisibleRange / newTotalData * 100)
+      
+      // 更新所有 dataZoom 的位置
+      dataZooms.forEach(dz => {
+        dz.start = Math.max(0, newStart)
+        dz.end = Math.min(100, newEnd)
+      })
+      
+      console.log(`📍 恢复图表位置: start ${savedDataZoomState.value.start.toFixed(2)}% -> ${newStart.toFixed(2)}%, end ${savedDataZoomState.value.end.toFixed(2)}% -> ${newEnd.toFixed(2)}%`)
+    }
+  }
+
+  kOption.value = {
+    legend: {
+      data: legend,
+      top: 10,
+      left: 'center'
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: { type: 'cross' }
+    },
+    grid: grids,
+    xAxis: xAxes,
+    yAxis: yAxes,
+    dataZoom: dataZooms,
+    series
+  }
+}
+
+async function fetchKline(isLoadMore = false) {
   try {
+    if (isLoadMore && (isLoadingMore.value || !hasMoreData.value)) {
+      return // 正在加载或没有更多数据时不重复加载
+    }
+
+    // 保存当前数据量，用于计算加载后的位置
+    const oldDataLength = klineData.value.length
+
+    if (isLoadMore) {
+      isLoadingMore.value = true
+      currentLimit.value += 200 // 每次加载200条
+    } else {
+      // 初始加载，重置状态
+      currentLimit.value = 200
+      hasMoreData.value = true
+      klineData.value = []
+    }
+
     const param = periodLabelToParam(period.value)
-    const res = await stocksApi.getKline(code.value, param as any, 200, 'none')
+    const res = await stocksApi.getKline(code.value, param as any, currentLimit.value, 'none')
     const d: any = (res as any)?.data || {}
     klineSource.value = d.source
     const items: any[] = Array.isArray(d.items) ? d.items : []
 
-    const category: string[] = []
-    const values: number[][] = [] // [open, close, low, high]
-
-    for (const it of items) {
-      const t = String(it.time || it.trade_time || it.trade_date || '')
-      const o = Number(it.open ?? NaN)
-      const h = Number(it.high ?? NaN)
-      const l = Number(it.low ?? NaN)
-      const c = Number(it.close ?? NaN)
-      if (!Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c) || !t) continue
-      category.push(t)
-      values.push([o, c, l, h])
+    // 检查是否还有更多数据
+    if (items.length < currentLimit.value) {
+      hasMoreData.value = false // 没有更多数据了
     }
 
-    if (category.length) {
-      lastKTime.value = category[category.length - 1]
-      lastKClose.value = values[values.length - 1][1]
+    // 计算新增数据量
+    const newDataCount = items.length - oldDataLength
+
+    // 保存原始数据
+    klineData.value = items
+
+    // 更新最后价格
+    if (items.length > 0) {
+      const lastItem = items[items.length - 1]
+      lastKTime.value = String(lastItem.time || lastItem.trade_time || lastItem.trade_date || '')
+      lastKClose.value = Number(lastItem.close ?? null)
     }
 
-    kOption.value = {
-      ...kOption.value,
-      xAxis: { type: 'category', data: category, boundaryGap: true, axisLine: { onZero: false } },
-      series: [
-        {
-          type: 'candlestick',
-          name: 'K线',
-          data: values,
-          itemStyle: {
-            color: '#ef4444',
-            color0: '#16a34a',
-            borderColor: '#ef4444',
-            borderColor0: '#16a34a'
-          }
-        }
-      ]
+    // 渲染图表
+    updateKlineChart()
+
+    // 显示加载提示
+    if (isLoadMore) {
+      if (newDataCount > 0) {
+        ElMessage.success({
+          message: `自动加载了 ${newDataCount} 条历史数据${!hasMoreData.value ? '（全部数据已加载）' : ''}`,
+          duration: 2000
+        })
+      } else if (!hasMoreData.value) {
+        ElMessage.info({
+          message: '已加载全部数据',
+          duration: 2000
+        })
+      }
     }
   } catch (e) {
     console.error('获取K线失败', e)
+    if (isLoadMore) {
+      ElMessage.error('加载更多数据失败')
+    }
+  } finally {
+    if (isLoadMore) {
+      isLoadingMore.value = false
+      // 重置 lastDataZoomStart，防止立即再次触发
+      lastDataZoomStart.value = 10
+      // 清除保存的状态
+      setTimeout(() => {
+        savedDataZoomState.value = null
+      }, 100)
+    }
   }
+}
+
+// 均线管理函数
+function addMA() {
+  editingMA.value = { period: 30, color: '#FF6B6B', enabled: true }
+  showMADialog.value = true
+}
+
+function editMA(ma: MAConfig) {
+  editingMA.value = { ...ma }
+  showMADialog.value = true
+}
+
+function deleteMA(index: number) {
+  maConfigs.value.splice(index, 1)
+}
+
+function saveMA() {
+  if (!editingMA.value) return
+  
+  const existingIndex = maConfigs.value.findIndex(ma => ma.period === editingMA.value!.period)
+  if (existingIndex >= 0) {
+    maConfigs.value[existingIndex] = editingMA.value
+  } else {
+    maConfigs.value.push(editingMA.value)
+  }
+  
+  showMADialog.value = false
+  editingMA.value = null
+}
+
+function toggleMA(index: number) {
+  maConfigs.value[index].enabled = !maConfigs.value[index].enabled
+}
+
+// 格式化交易时间
+function formatTradeTime(timestamp: string): string {
+  if (!timestamp) return '-'
+  try {
+    const date = new Date(timestamp)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    })
+  } catch (e) {
+    return timestamp
+  }
+}
+
+// 获取盈亏标签类型（赚了红色，亏了绿色，0也是红色）
+function getProfitTagType(): string {
+  if (!avgPrice.value || !quote.price || currentQuantity.value <= 0) return 'info'
+  const totalProfit = (quote.price - avgPrice.value) * currentQuantity.value
+  if (totalProfit >= 0) return 'danger'  // 红色（赚了或0）
+  return 'success'  // 绿色（亏了）
+}
+
+// 格式化总持仓盈亏金额
+function formatProfit(): string {
+  if (!avgPrice.value || !quote.price || currentQuantity.value <= 0) return '-'
+  const totalProfit = (quote.price - avgPrice.value) * currentQuantity.value
+  const profitStr = totalProfit >= 0 ? `+￥${totalProfit.toFixed(2)}` : `￥${totalProfit.toFixed(2)}`
+  return profitStr
 }
 
 
@@ -1206,8 +2192,41 @@ function exportReport() {
 
 .body { margin-top: 4px; }
 .card-hd { display: flex; align-items: center; justify-content: space-between; }
-.k-chart { height: 320px; }
-.legend { margin-top: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.kline-controls { display: flex; align-items: center; gap: 8px; }
+.kline-container { position: relative; }
+.loading-overlay {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: rgba(64, 158, 255, 0.95);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  font-size: 13px;
+  font-weight: 500;
+}
+.k-chart { 
+  height: 580px; /* 增加高度以适应副图 */ 
+  min-height: 450px;
+}
+.kline-footer { 
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between; 
+  margin-top: 8px; 
+  gap: 12px;
+}
+.legend { 
+  font-size: 12px; 
+  color: var(--el-text-color-secondary); 
+  flex: 1;
+}
 
 .news-card .news-list { display: flex; flex-direction: column; }
 .news-item { padding: 10px 12px; border-bottom: 1px solid var(--el-border-color-lighter); transition: background-color .2s ease; }
@@ -1229,8 +2248,9 @@ function exportReport() {
 .sentiment.neu { color: #64748b; }
 .sentiment.neg { color: #10b981; }
 
-.facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.facts { display: flex; flex-direction: column; gap: 10px; }
 .fact { display: flex; flex-direction: column; font-size: 12px; }
+.fact span { color: var(--el-text-color-secondary); margin-bottom: 4px; }
 .fact b { font-size: 14px; color: var(--el-text-color-primary); }
 
 .quick-actions { display: flex; flex-direction: column; gap: 8px; }
@@ -1501,5 +2521,48 @@ function exportReport() {
   align-items: center;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+/* 均线管理样式 */
+.ma-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.ma-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+/* 交易记录对话框样式 */
+.trades-dialog {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.trades-summary {
+  margin-bottom: 16px;
+}
+
+.trades-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+  font-size: 12px;
+  color: #0369a1;
+}
+
+.trades-note .el-icon {
+  font-size: 14px;
+  color: #0284c7;
 }
 </style>

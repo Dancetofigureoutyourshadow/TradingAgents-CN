@@ -63,6 +63,23 @@ export const paperApi = {
   },
   async resetAccount() {
     // 后端要求 confirm=true
-    return ApiClient.post<{ message: string; cash: number }>(`/api/paper/reset?confirm=true`)
+    return ApiClient.get<{ message: string; cash: number }>(`/api/paper/reset?confirm=true`)
+  },
+  async getStockTrades(code: string) {
+    return ApiClient.get<{
+      code: string;
+      market: string;
+      trades: Array<{
+        side: 'buy' | 'sell';
+        quantity: number;
+        price: number;
+        amount: number;
+        timestamp: string;
+        pnl: number;
+      }>;
+      avg_price: number | null;
+      total_buy_quantity: number;
+      current_quantity: number;  // 当前持有数量
+    }>(`/api/paper/trades/${code}`)
   }
 }
