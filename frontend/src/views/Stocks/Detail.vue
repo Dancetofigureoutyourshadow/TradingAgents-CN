@@ -23,7 +23,7 @@
         <el-button type="warning" @click="clearCache" :loading="clearCacheLoading">
           <el-icon><Delete /></el-icon> 清除缓存
         </el-button>
-        <el-button type="success" @click="goPaperTrading">
+        <el-button type="success" @click="openOrderDialogFromTrades">
           <el-icon><CreditCard /></el-icon> 模拟交易
         </el-button>
       </div>
@@ -172,10 +172,9 @@
                   />
                 </el-select>
                 
-                <!-- 交易记录按钮 -->
+                <!-- 交易记录按钮-->
                 <el-button 
-                  v-if="stockTrades.length > 0" 
-                  size="small" 
+                  size="small"
                   @click="showTradesDialog = true"
                   style="margin-left: 12px"
                 >
@@ -364,7 +363,7 @@
           <div class="quick-actions">
             <el-button type="primary" @click="onAnalyze" :icon="TrendCharts" plain>发起分析</el-button>
             <el-button @click="onToggleFavorite" :icon="Star">{{ isFav ? '移出自选' : '加入自选' }}</el-button>
-            <el-button type="success" :icon="CreditCard" @click="goPaperTrading">模拟交易</el-button>
+            <el-button type="success" :icon="CreditCard" @click="openOrderDialogFromTrades">模拟交易</el-button>
           </div>
         </el-card>
       </el-col>
@@ -1873,13 +1872,65 @@ async function onToggleFavorite() {
   }
 }
 
-function goPaperTrading() {
-  router.push({ name: 'PaperTradingHome', query: { code: code.value } })
+// 从交易记录打开下单对话框
+function openOrderDialogFromTrades() {
+  order.value.code = code.value
+  order.value.side = 'buy'
+  order.value.qty = 100
+  order.value.price = quote.price && Number.isFinite(quote.price) ? quote.price : null
+  orderDialog.value = true
 }
 
-function scrollToDetail() {
-  const el = document.getElementById('analysis-detail')
-  if (el) el.scrollIntoView({ behavior: 'smooth' })
+// 获取最新价格
+async function fetchLatestPrice() {
+  if (!code.value) return
+
+  try {
+    fetchingPrice.value = true
+    await fetchQuote()
+    if (quote.price && Number.isFinite(quote.price)) {
+      order.value.price = quote.price
+    } else {
+      order.value.price = null
+      ElMessage.warning('未能获取到有效价格，请手动输入')
+    }
+  } catch (error) {
+    console.warn('获取最新价格失败:', error)
+    order.value.price = null
+    ElMessage.error('获取价格失败')
+  } finally {
+    fetchingPrice.value = false
+  }
+}
+
+// 提交订单
+async function submitOrder() {
+  try {
+    // 验证价格
+    if (order.value.price === null || order.value.price <= 0) {
+      ElMessage.warning('请输入有效的价格')
+      return
+    }
+
+    const payload: any = {
+      side: order.value.side,
+      code: order.value.code,
+      quantity: Number(order.value.qty),
+      price: Number(order.value.price)
+    }
+
+    const res = await paperApi.placeOrder(payload)
+    if (res.success) {
+      ElMessage.success('下单成功')
+      orderDialog.value = false
+      // 刷新交易记录
+      await fetchStockTrades()
+    } else {
+      ElMessage.error(res.message || '下单失败')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || '下单失败')
+  }
 }
 
 // 获取最新的历史分析报告

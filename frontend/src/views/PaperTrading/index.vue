@@ -51,7 +51,7 @@
                   <el-descriptions-item label="持仓市值">¥{{ fmtAmount(account.positions_value?.CNY || account.positions_value) }}</el-descriptions-item>
                   <el-descriptions-item label="总资产">¥{{ fmtAmount(account.equity?.CNY || account.equity) }}</el-descriptions-item>
                   <el-descriptions-item label="已实现盈亏">
-                    <span :style="{ color: (account.realized_pnl?.CNY !== undefined ? account.realized_pnl.CNY : (typeof account.realized_pnl === 'number' ? account.realized_pnl : 0)) >= 0 ? '#67C23A' : '#F56C6C' }">
+                    <span :style="{ color: (account.realized_pnl?.CNY !== undefined ? account.realized_pnl.CNY : (typeof account.realized_pnl === 'number' ? account.realized_pnl : 0)) >= 0 ? '#F56C6C' : '#67C23A' }">
                       ¥{{ fmtAmount(account.realized_pnl?.CNY !== undefined ? account.realized_pnl.CNY : (typeof account.realized_pnl === 'number' ? account.realized_pnl : 0)) }}
                     </span>
                   </el-descriptions-item>
@@ -65,7 +65,7 @@
                   <el-descriptions-item label="持仓市值">HK${{ fmtAmount(account.positions_value?.HKD || 0) }}</el-descriptions-item>
                   <el-descriptions-item label="总资产">HK${{ fmtAmount(account.equity?.HKD || 0) }}</el-descriptions-item>
                   <el-descriptions-item label="已实现盈亏">
-                    <span :style="{ color: (account.realized_pnl?.HKD || 0) >= 0 ? '#67C23A' : '#F56C6C' }">
+                    <span :style="{ color: (account.realized_pnl?.HKD || 0) >= 0 ? '#F56C6C' : '#67C23A' }">
                       HK${{ fmtAmount(account.realized_pnl?.HKD || 0) }}
                     </span>
                   </el-descriptions-item>
@@ -79,7 +79,7 @@
                   <el-descriptions-item label="持仓市值">${{ fmtAmount(account.positions_value?.USD || 0) }}</el-descriptions-item>
                   <el-descriptions-item label="总资产">${{ fmtAmount(account.equity?.USD || 0) }}</el-descriptions-item>
                   <el-descriptions-item label="已实现盈亏">
-                    <span :style="{ color: (account.realized_pnl?.USD || 0) >= 0 ? '#67C23A' : '#F56C6C' }">
+                    <span :style="{ color: (account.realized_pnl?.USD || 0) >= 0 ? '#F56C6C' : '#67C23A' }">
                       ${{ fmtAmount(account.realized_pnl?.USD || 0) }}
                     </span>
                   </el-descriptions-item>
@@ -116,7 +116,7 @@
             </el-table-column>
             <el-table-column label="市场" width="70">
               <template #default="{ row }">
-                <el-tag v-if="row.market === 'CN'" type="success" size="small">🇨🇳 A股</el-tag>
+                <el-tag v-if="row.market === 'CN'" type="danger" size="small">🇨🇳 A股</el-tag>
                 <el-tag v-else-if="row.market === 'HK'" type="warning" size="small">🇭🇰 港股</el-tag>
                 <el-tag v-else-if="row.market === 'US'" type="info" size="small">🇺🇸 美股</el-tag>
                 <el-tag v-else size="small">{{ row.market || 'CN' }}</el-tag>
@@ -138,7 +138,7 @@
             </el-table-column>
             <el-table-column label="浮盈" width="120">
               <template #default="{ row }">
-                <span :style="{ color: (Number(row.last_price || 0) - Number(row.avg_cost || 0)) >= 0 ? '#67C23A' : '#F56C6C' }">
+                <span :style="{ color: (Number(row.last_price || 0) - Number(row.avg_cost || 0)) >= 0 ? '#F56C6C' : '#67C23A' }">
                   {{ getCurrencySymbol(row.currency) }}{{ fmtAmount((Number(row.last_price || 0) - Number(row.avg_cost || 0)) * Number(row.quantity || 0)) }}
                 </span>
               </template>
@@ -168,7 +168,7 @@
             </el-table-column>
             <el-table-column label="方向" width="80">
               <template #default="{ row }">
-                <el-tag :type="row.side === 'buy' ? 'success' : 'danger'" size="small">
+                <el-tag :type="row.side === 'buy' ? 'danger' : 'success'" size="small">
                   {{ row.side === 'buy' ? '买入' : '卖出' }}
                 </el-tag>
               </template>
@@ -187,7 +187,7 @@
             <el-table-column prop="quantity" label="数量" width="100" />
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'filled' ? 'success' : 'info'" size="small">
+                <el-tag :type="row.status === 'filled' ? 'info' : 'success'" size="small">
                   {{ row.status === 'filled' ? '已成交' : row.status }}
                 </el-tag>
               </template>
@@ -254,7 +254,7 @@
           </el-autocomplete>
         </el-form-item>
         <el-form-item label="市场" v-if="detectedMarket">
-          <el-tag v-if="detectedMarket === 'CN'" type="success">🇨🇳 A股市场 (CNY)</el-tag>
+          <el-tag v-if="detectedMarket === 'CN'" type="danger">🇨🇳 A股市场 (CNY)</el-tag>
           <el-tag v-else-if="detectedMarket === 'HK'" type="warning">🇭🇰 港股市场 (HKD)</el-tag>
           <el-tag v-else-if="detectedMarket === 'US'" type="info">🇺🇸 美股市场 (USD)</el-tag>
           <div style="margin-top: 8px; font-size: 12px; color: #909399">
