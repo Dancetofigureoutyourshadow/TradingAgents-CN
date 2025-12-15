@@ -238,11 +238,24 @@
         </el-form-item>
 
         <el-form-item label="股票代码" prop="stock_code">
-          <el-input
+          <el-autocomplete
             v-model="addForm.stock_code"
+            :fetch-suggestions="queryStockSearch"
             :placeholder="getStockCodePlaceholder()"
-            @blur="fetchStockInfo"
-          />
+            clearable
+            style="width: 100%"
+            @select="handleStockSelect"
+          >
+            <template #default="{ item }">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-weight: 500;">{{ item.code }}</span>
+                  <span style="margin-left: 8px; color: #909399;">{{ item.name }}</span>
+                </div>
+                <el-tag size="small" type="info">{{ getMarketLabel(item.market) }}</el-tag>
+              </div>
+            </template>
+          </el-autocomplete>
           <div style="font-size: 12px; color: #909399; margin-top: 4px;">
             {{ getStockCodeHint() }}
           </div>
@@ -512,6 +525,7 @@ import {
 import { favoritesApi } from '@/api/favorites'
 import { tagsApi } from '@/api/tags'
 import { stockSyncApi } from '@/api/stockSync'
+import { stocksApi } from '@/api/stocks'
 import { normalizeMarketForAnalysis } from '@/utils/market'
 import { ApiClient } from '@/api/request'
 
@@ -894,13 +908,78 @@ const getStockCodePlaceholder = () => {
 const getStockCodeHint = () => {
   const market = addForm.value.market
   if (market === 'A股') {
-    return '输入代码后失焦，将自动填充股票名称'
+    return '输入代码或名称进行模糊搜索，选择后自动填充'
   } else if (market === '港股') {
-    return '港股不支持自动获取名称，请手动输入'
+    return '输入代码或名称进行模糊搜索（港股搜索功能有限）'
   } else if (market === '美股') {
-    return '美股不支持自动获取名称，请手动输入'
+    return '输入代码或名称进行模糊搜索（美股搜索功能有限）'
   }
-  return ''
+  return '输入代码或名称进行模糊搜索'
+}
+
+// 🔥 股票搜索（自动完成）
+const queryStockSearch = (queryString: string, cb: (suggestions: any[]) => void) => {
+  if (!queryString || queryString.trim().length === 0) {
+    cb([])
+    return
+  }
+
+  // 异步搜索
+  stocksApi.searchStocks(queryString.trim(), 10)
+    .then(res => {
+      if (res.success && res.data && Array.isArray(res.data)) {
+        const suggestions = res.data.map((item: any) => ({
+          value: item.symbol || item.code || '',
+          code: item.symbol || item.code || '',
+          name: item.name || '',
+          market: item.market || 'CN'
+        }))
+        cb(suggestions)
+      } else {
+        cb([])
+      }
+    })
+    .catch(error => {
+      console.warn('搜索股票失败:', error)
+      cb([])
+    })
+}
+
+// 选择股票后的处理
+const handleStockSelect = (item: any) => {
+  if (item && item.code) {
+    addForm.value.stock_code = item.code
+    addForm.value.stock_name = item.name || ''
+    
+    // 自动识别市场类型
+    if (item.market) {
+      const marketMap: Record<string, string> = {
+        'CN': 'A股',
+        'HK': '港股',
+        'US': '美股'
+      }
+      const detectedMarket = marketMap[item.market] || addForm.value.market
+      if (detectedMarket !== addForm.value.market) {
+        addForm.value.market = detectedMarket
+        ElMessage.success(`已自动识别为${detectedMarket}`)
+      }
+    }
+    
+    // 如果已经有名称，提示成功
+    if (item.name) {
+      ElMessage.success(`已选择：${item.code} ${item.name}`)
+    }
+  }
+}
+
+// 获取市场标签
+const getMarketLabel = (market: string) => {
+  const labels: Record<string, string> = {
+    'CN': 'A股',
+    'HK': '港股',
+    'US': '美股'
+  }
+  return labels[market] || market
 }
 
 const fetchStockInfo = async () => {

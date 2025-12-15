@@ -105,6 +105,8 @@ class SingleStockSyncRequest(BaseModel):
     sync_historical: bool = Field(True, description="是否同步历史数据")
     sync_financial: bool = Field(True, description="是否同步财务数据")
     sync_basic: bool = Field(False, description="是否同步基础数据")
+    sync_minute: bool = Field(False, description="是否同步分钟级别数据")
+    minute_period: str = Field("5min", description="分钟级别周期: 1min/5min/15min/30min/60min")
     data_source: str = Field("tushare", description="数据源: tushare/akshare")
     days: int = Field(30, description="历史数据天数", ge=1, le=3650)
 
@@ -143,7 +145,8 @@ async def sync_single_stock(
             "realtime_sync": None,
             "historical_sync": None,
             "financial_sync": None,
-            "basic_sync": None
+            "basic_sync": None,
+            "minute_sync": None
         }
 
         # 同步实时行情
@@ -502,12 +505,43 @@ async def sync_single_stock(
                     "error": str(e)
                 }
 
+        # 同步分钟级别数据
+        if request.sync_minute:
+            try:
+                # 验证周期参数
+                valid_periods = ["1m", "5m", "15m", "30m", "60m"]
+                if request.minute_period not in valid_periods:
+                    raise ValueError(f"不支持的分钟周期: {request.minute_period}，支持的周期: {valid_periods}")
+
+                date_source = ["tushare", "akshare"]
+                if request.data_source not in date_source:
+                    raise ValueError(f"不支持的数据源: {request.data_source}，支持的数据源: {date_source}")
+
+                if request.data_source == "tushare":
+                    tushare_service = await get_tushare_sync_service()
+                    tushare_service.sync_minute_data(request.symbol, request.minute_period)
+                    pass
+                elif request.data_source == "akshare":
+                    # 直接调用 akshare 的分钟数据接口
+                    akshare_service = await get_akshare_sync_service()
+                    akshare_service.sync_minute_data(request.symbol, request.minute_period)
+
+                    pass
+
+            except Exception as e:
+                logger.error(f"❌ {request.symbol} 分钟数据同步失败: {e}")
+                result["minute_sync"] = {
+                    "success": False,
+                    "error": str(e)
+                }
+
         # 判断整体是否成功
         overall_success = (
             (not request.sync_realtime or result["realtime_sync"].get("success", False)) and
             (not request.sync_historical or result["historical_sync"].get("success", False)) and
             (not request.sync_financial or result["financial_sync"].get("success", False)) and
-            (not request.sync_basic or result["basic_sync"].get("success", False))
+            (not request.sync_basic or result["basic_sync"].get("success", False)) and
+            (not request.sync_minute or result["minute_sync"].get("success", False))
         )
 
         # 添加整体成功标志到结果中

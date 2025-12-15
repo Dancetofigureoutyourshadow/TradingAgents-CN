@@ -264,7 +264,7 @@
           </div>
         </el-form-item>
         <el-form-item label="数量">
-          <el-input-number v-model="order.qty" :min="1" />
+          <el-input-number v-model="order.qty" :min="100" :step="100" />
         </el-form-item>
         <el-form-item label="价格">
           <el-input-number 

@@ -1,4 +1,4 @@
-import { ApiClient, type ApiResponse } from './request'
+import { ApiClient } from './request'
 
 export interface CurrencyAmount {
   CNY: number
@@ -62,8 +62,8 @@ export const paperApi = {
     return ApiClient.get<{ items: PaperOrderItem[] }>(`/api/paper/orders`, { limit })
   },
   async resetAccount() {
-    // 后端要求 confirm=true
-    return ApiClient.get<{ message: string; cash: number }>(`/api/paper/reset?confirm=true`)
+    // 后端要求 confirm=true，使用POST方法
+    return ApiClient.post<{ message: string; cash: CurrencyAmount }>(`/api/paper/reset?confirm=true`, {})
   },
   async getStockTrades(code: string) {
     return ApiClient.get<{

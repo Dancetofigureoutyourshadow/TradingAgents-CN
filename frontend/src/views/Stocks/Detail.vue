@@ -417,6 +417,7 @@
             <el-checkbox label="historical">历史行情数据</el-checkbox>
             <el-checkbox label="financial">财务数据</el-checkbox>
             <el-checkbox label="basic">基础数据</el-checkbox>
+<!--            <el-checkbox label="minute">分钟级别数据</el-checkbox>-->
           </el-checkbox-group>
         </el-form-item>
         <el-form-item label="数据源">
@@ -430,6 +431,17 @@
           <span style="margin-left: 10px; color: #909399; font-size: 12px;">
             (最多3650天，约10年)
           </span>
+        </el-form-item>
+        <el-form-item label="分钟周期" v-if="syncForm.syncTypes.includes('minute')">
+          <el-radio-group v-model="syncForm.minutePeriod">
+            <el-radio label="5min">5分钟</el-radio>
+            <el-radio label="15min">15分钟</el-radio>
+            <el-radio label="30min">30分钟</el-radio>
+            <el-radio label="60min">60分钟</el-radio>
+          </el-radio-group>
+          <div style="margin-top: 8px; color: #909399; font-size: 12px;">
+            💡 分钟数据量较大，默认只获取最近7天
+          </div>
         </el-form-item>
       </el-form>
 
@@ -685,7 +697,8 @@ const syncLoading = ref(false)
 const syncForm = reactive({
   syncTypes: ['realtime'],  // 默认选中实时行情
   dataSource: 'tushare' as 'tushare' | 'akshare',
-  days: 365
+  days: 365,
+  minutePeriod: '5min' as '5min' | '15min' | '30min' | '60min'
 })
 
 // 清除缓存
@@ -711,6 +724,8 @@ async function handleSync() {
       sync_historical: syncForm.syncTypes.includes('historical'),
       sync_financial: syncForm.syncTypes.includes('financial'),
       sync_basic: syncForm.syncTypes.includes('basic'),
+      sync_minute: syncForm.syncTypes.includes('minute'),
+      minute_period: syncForm.minutePeriod,
       data_source: syncForm.dataSource,
       days: syncForm.days
     })
@@ -753,6 +768,14 @@ async function handleSync() {
           message += `✅ 基础数据同步成功\n`
         } else {
           message += `❌ 基础数据同步失败: ${data.basic_sync.error || '未知错误'}\n`
+        }
+      }
+
+      if (data.minute_sync) {
+        if (data.minute_sync.success) {
+          message += `✅ 分钟数据: ${data.minute_sync.records || 0} 条记录，保存 ${data.minute_sync.saved || 0} 条\n`
+        } else {
+          message += `❌ 分钟数据同步失败: ${data.minute_sync.error || '未知错误'}\n`
         }
       }
 
@@ -1219,7 +1242,22 @@ function updateKlineChart() {
     Number(item.high ?? NaN)
   ])
   const closeData = klineData.value.map((item: any) => Number(item.close ?? NaN))
-  const volumeData = klineData.value.map((item: any) => Number(item.volume ?? 0))
+  
+  // 🔥 处理成交量数据：如果最新数据日期与当前日期一致，去除最后三位
+  const today = new Date().toISOString().split('T')[0].replace(/-/g, '')
+  const volumeData = klineData.value.map((item: any, index: any) => {
+    const volume = Number(item.volume ?? 0)
+    // 检查是否是最新数据且日期与今天一致
+    if (index === klineData.value.length - 1) {
+      const itemDate = String(item.time || item.trade_time || item.trade_date || '').replace(/-/g, '').substring(0, 8)
+      if (itemDate === today) {
+        // 去除最后三位（除以1000）
+        return Math.floor(volume / 100)
+      }
+    }
+    return volume
+  })
+  
   const highData = klineData.value.map((item: any) => Number(item.high ?? NaN))
   const lowData = klineData.value.map((item: any) => Number(item.low ?? NaN))
 

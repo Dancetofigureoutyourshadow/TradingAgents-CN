@@ -10,6 +10,8 @@ export interface SingleStockSyncRequest {
   sync_historical: boolean
   sync_financial: boolean
   sync_basic?: boolean
+  sync_minute?: boolean
+  minute_period?: '5min' | '15min' | '30min' | '60min'
   data_source: 'tushare' | 'akshare'
   days: number
 }
@@ -26,8 +28,10 @@ export interface BatchStockSyncRequest {
 export interface SyncResult {
   success: boolean
   records?: number
+  saved?: number
   message?: string
   error?: string
+  data_source_used?: string  // 实际使用的数据源
 }
 
 export interface SingleStockSyncResponse {
@@ -36,6 +40,7 @@ export interface SingleStockSyncResponse {
   historical_sync: SyncResult | null
   financial_sync: SyncResult | null
   basic_sync: SyncResult | null
+  minute_sync: SyncResult | null
 }
 
 export interface BatchStockSyncResponse {

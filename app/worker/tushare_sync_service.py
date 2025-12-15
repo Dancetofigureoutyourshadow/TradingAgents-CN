@@ -1260,6 +1260,9 @@ class TushareSyncService:
                 raise
             logger.error(f"❌ 更新任务进度失败: {e}", exc_info=True)
 
+    def sync_minute_data(self, symbol, minute_period):
+        pass
+
 
 # 全局同步服务实例
 _tushare_sync_service = None
