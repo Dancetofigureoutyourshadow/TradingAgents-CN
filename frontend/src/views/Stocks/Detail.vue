@@ -2698,7 +2698,7 @@ function exportReport() {
 
 .report-tag:hover {
   transform: translateY(-2px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px var(--el-box-shadow-light);
 }
 
 /* 报告对话框样式 */
@@ -2708,6 +2708,7 @@ function exportReport() {
 
 .report-content {
   padding: 20px;
+  background: var(--el-bg-color);
 }
 
 .markdown-body {
@@ -2819,16 +2820,16 @@ function exportReport() {
 
 /* 投资建议盒子 - 重点突出 */
 .recommendation-box {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, var(--el-color-primary) 0%, var(--el-color-primary-light-3) 100%);
   border-radius: 12px;
   padding: 20px 24px;
-  box-shadow: 0 4px 16px rgba(102, 126, 234, 0.25);
+  box-shadow: 0 4px 16px var(--el-box-shadow-light);
   transition: all 0.3s ease;
   margin: 16px 0;
 }
 
 .recommendation-box:hover {
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.35);
+  box-shadow: 0 6px 20px var(--el-box-shadow);
   transform: translateY(-2px);
 }
 
@@ -2837,7 +2838,7 @@ function exportReport() {
   align-items: center;
   gap: 8px;
   margin-bottom: 16px;
-  color: rgba(255, 255, 255, 0.95);
+  color: #ffffff;
   font-size: 15px;
   font-weight: 600;
 }
@@ -2847,14 +2848,14 @@ function exportReport() {
 }
 
 .recommendation-content {
-  background: rgba(255, 255, 255, 0.98);
+  background: var(--el-bg-color);
   border-radius: 8px;
   padding: 16px 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 8px var(--el-box-shadow-light);
 }
 
 .recommendation-text {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-size: 15px;
   line-height: 1.8;
   font-weight: 500;
@@ -2866,9 +2867,9 @@ function exportReport() {
 /* 分析摘要 */
 .summary-section {
   padding: 18px 20px;
-  background: #f8fafc;
+  background: var(--el-fill-color-light);
   border-radius: 8px;
-  border-left: 4px solid #3b82f6;
+  border-left: 4px solid var(--el-color-primary);
   margin-top: 16px;
 }
 
@@ -2878,17 +2879,17 @@ function exportReport() {
   gap: 8px;
   font-size: 15px;
   font-weight: 600;
-  color: #1e40af;
+  color: var(--el-color-primary);
   margin-bottom: 12px;
 }
 
 .summary-title .el-icon {
   font-size: 18px;
-  color: #3b82f6;
+  color: var(--el-color-primary);
 }
 
 .summary-text {
-  color: #334155;
+  color: var(--el-text-color-primary);
   line-height: 1.8;
   font-size: 14px;
   word-wrap: break-word;
@@ -2974,16 +2975,16 @@ function exportReport() {
 
 .history-item {
   padding: 12px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--el-border-color);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--el-bg-color);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .history-item:hover {
-  border-color: #3b82f6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  border-color: var(--el-color-primary);
+  box-shadow: 0 2px 8px var(--el-box-shadow-light);
   transform: translateY(-1px);
 }
 
@@ -2991,11 +2992,11 @@ function exportReport() {
 .history-item.is-running {
   cursor: not-allowed;
   opacity: 0.7;
-  background: #f9fafb;
+  background: var(--el-fill-color-lighter);
 }
 
 .history-item.is-running:hover {
-  border-color: #e5e7eb;
+  border-color: var(--el-border-color);
   box-shadow: none;
   transform: none;
 }
@@ -3009,7 +3010,7 @@ function exportReport() {
 
 .history-date {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
 }
 
 .history-content {
@@ -3026,18 +3027,18 @@ function exportReport() {
 }
 
 .history-info .label {
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
 }
 
 .history-info .value {
-  color: #1f2937;
+  color: var(--el-text-color-primary);
   font-weight: 500;
 }
 
 .history-summary {
   margin-top: 8px;
   padding: 8px;
-  background: #f9fafb;
+  background: var(--el-fill-color-lighter);
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.5;
@@ -3052,7 +3053,7 @@ function exportReport() {
 
 .confidence-text {
   font-size: 12px;
-  color: #6b7280;
+  color: var(--el-text-color-secondary);
   white-space: nowrap;
 }
 
