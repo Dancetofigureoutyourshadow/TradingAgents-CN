@@ -374,8 +374,20 @@ const downloadReport = async (format: string = 'markdown') => {
     loadingMsg.close()
 
     if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(errorText || `HTTP ${response.status}`)
+      // 尝试解析 JSON 错误响应
+      let errorMessage = `HTTP ${response.status}`
+      try {
+        const errorData = await response.json()
+        errorMessage = errorData.detail || errorData.message || errorMessage
+      } catch {
+        // 如果不是 JSON，尝试读取文本
+        try {
+          errorMessage = await response.text() || errorMessage
+        } catch {
+          // 忽略读取错误，使用默认消息
+        }
+      }
+      throw new Error(errorMessage)
     }
 
     const blob = await response.blob()
@@ -396,14 +408,36 @@ const downloadReport = async (format: string = 'markdown') => {
   } catch (error: any) {
     console.error('下载报告失败:', error)
 
-    // 显示详细错误信息
-    if (error.message && error.message.includes('pandoc')) {
-      ElMessage.error({
-        message: 'PDF/Word 导出需要安装 pandoc 工具',
-        duration: 5000
-      })
+    // 解析并显示详细错误信息
+    const errorMsg = error.message || '未知错误'
+    
+    // 检查是否是 pandoc 相关错误
+    if (errorMsg.includes('pandoc') || errorMsg.includes('Pandoc')) {
+      if (format === 'pdf') {
+        ElMessage.error({
+          message: 'PDF 导出需要安装 pandoc 和 PDF 引擎（wkhtmltopdf 或 LaTeX）。请联系管理员安装相关工具，或选择 Markdown/JSON 格式下载。',
+          duration: 8000,
+          showClose: true
+        })
+      } else if (format === 'docx') {
+        ElMessage.error({
+          message: 'Word 导出需要安装 pandoc 工具。请联系管理员安装 pandoc，或选择 Markdown/JSON 格式下载。',
+          duration: 8000,
+          showClose: true
+        })
+      } else {
+        ElMessage.error({
+          message: errorMsg,
+          duration: 5000,
+          showClose: true
+        })
+      }
     } else {
-      ElMessage.error(`下载报告失败: ${error.message || '未知错误'}`)
+      ElMessage.error({
+        message: `下载报告失败: ${errorMsg}`,
+        duration: 5000,
+        showClose: true
+      })
     }
   }
 }

@@ -3577,7 +3577,9 @@ class ConfigService:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
                     content = result["choices"][0]["message"]["content"]
-                    if content and len(content.strip()) > 0:
+                    reasoning_content = result["choices"][0]["message"]["reasoning_content"]
+
+                    if (content or reasoning_content) and (len(content.strip()) > 0 or len(reasoning_content.strip()) > 0):
                         return {
                             "success": True,
                             "message": f"{display_name} API连接测试成功"

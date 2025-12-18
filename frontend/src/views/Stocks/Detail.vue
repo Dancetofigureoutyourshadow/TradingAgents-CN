@@ -366,6 +366,99 @@
             <el-button type="success" :icon="CreditCard" @click="openOrderDialogFromTrades">模拟交易</el-button>
           </div>
         </el-card>
+
+        <!-- 历史分析记录 -->
+        <el-card shadow="hover" class="history-card" style="margin-top: 16px;">
+          <template #header>
+            <div class="card-hd" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>历史分析记录</span>
+              <el-button 
+                text 
+                size="small" 
+                @click="loadAnalysisHistory" 
+                :loading="historyLoading"
+                :icon="Refresh"
+              >
+                刷新
+              </el-button>
+            </div>
+          </template>
+          
+          <!-- 加载状态 -->
+          <div v-if="historyLoading" style="text-align: center; padding: 20px;">
+            <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+            <p style="margin-top: 8px; color: #909399;">加载中...</p>
+          </div>
+          
+          <!-- 空状态 -->
+          <el-empty 
+            v-else-if="analysisHistoryList.length === 0" 
+            description="暂无历史分析记录" 
+            :image-size="80"
+          />
+          
+          <!-- 历史记录列表 -->
+          <div v-else class="history-list">
+            <div 
+              v-for="(item, index) in analysisHistoryList" 
+              :key="item.task_id || index"
+              class="history-item"
+              :class="{ 'is-running': item.status === 'running' || item.status === 'pending' }"
+              @click="viewHistoryDetail(item)"
+            >
+              <div class="history-header">
+                <el-tag 
+                  :type="getStatusTagType(item.status)" 
+                  size="small"
+                  effect="plain"
+                >
+                  {{ getStatusText(item.status) }}
+                </el-tag>
+                <span class="history-date">{{ formatHistoryDate(item.created_at || item.start_time) }}</span>
+              </div>
+              
+              <div class="history-content">
+                <div class="history-info">
+                  <span class="label">分析深度:</span>
+                  <span class="value">{{ item.research_depth || item.parameters?.research_depth || '快速' }}</span>
+                </div>
+                <div class="history-info" v-if="item.execution_time">
+                  <span class="label">耗时:</span>
+                  <span class="value">{{ formatExecutionTime(item.execution_time) }}</span>
+                </div>
+              </div>
+              
+              <div class="history-summary" v-if="item.summary || item.recommendation">
+                <el-text line-clamp="2" style="font-size: 12px; color: #606266;">
+                  {{ item.summary || item.recommendation || '暂无摘要' }}
+                </el-text>
+              </div>
+              
+              <div class="history-footer" v-if="item.confidence_score !== undefined">
+                <el-progress 
+                  :percentage="Math.round((item.confidence_score || 0) * 100)" 
+                  :color="getConfidenceColor(item.confidence_score)"
+                  :stroke-width="6"
+                  :show-text="false"
+                />
+                <span class="confidence-text">置信度: {{ ((item.confidence_score || 0) * 100).toFixed(0) }}%</span>
+              </div>
+            </div>
+            
+            <!-- 分页 -->
+            <div class="history-pagination" v-if="historyTotal > historyPageSize">
+              <el-pagination
+                small
+                background
+                layout="prev, pager, next"
+                :total="historyTotal"
+                :page-size="historyPageSize"
+                :current-page="historyCurrentPage"
+                @current-change="handleHistoryPageChange"
+              />
+            </div>
+          </div>
+        </el-card>
       </el-col>
     </el-row>
 
@@ -541,6 +634,53 @@
         <el-button @click="showTradesDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+
+    <!-- 🔥 模拟下单对话框 -->
+    <el-dialog v-model="orderDialog" title="模拟下单" width="480px">
+      <el-form label-width="100px">
+        <el-form-item label="股票代码">
+          <el-input v-model="order.code" disabled />
+        </el-form-item>
+        <el-form-item label="股票名称">
+          <el-input v-model="stockName" disabled />
+        </el-form-item>
+        <el-form-item label="交易方向">
+          <el-radio-group v-model="order.side">
+            <el-radio label="buy">买入</el-radio>
+            <el-radio label="sell">卖出</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="数量">
+          <el-input-number v-model="order.qty" :min="100" :step="100" />
+        </el-form-item>
+        <el-form-item label="价格">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <el-input-number 
+              v-model="order.price" 
+              :precision="2" 
+              :min="0" 
+              :step="0.01"
+              style="flex: 1;"
+            />
+            <el-button 
+              :icon="Refresh" 
+              @click="fetchLatestPrice" 
+              :loading="fetchingPrice"
+              size="small"
+            >
+              获取最新价
+            </el-button>
+          </div>
+          <div style="margin-top: 4px; font-size: 12px; color: #909399;">
+            当前价: {{ quote.price && Number.isFinite(quote.price) ? `￥${quote.price.toFixed(2)}` : '-' }}
+          </div>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="orderDialog = false">取消</el-button>
+        <el-button type="primary" @click="submitOrder">提交订单</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -548,7 +688,7 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { TrendCharts, Star, Refresh, Link, Document, Clock, Reading, CreditCard, Delete, ArrowDown, InfoFilled } from '@element-plus/icons-vue'
+import { TrendCharts, Star, Refresh, Link, Document, Clock, Reading, CreditCard, Delete, ArrowDown, InfoFilled, Loading } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import { stocksApi } from '@/api/stocks'
 import { analysisApi } from '@/api/analysis'
@@ -564,7 +704,6 @@ import { CanvasRenderer } from 'echarts/renderers'
 import VChart from 'vue-echarts'
 import type { EChartsOption } from 'echarts'
 import { favoritesApi } from '@/api/favorites'
-import { useNotificationStore } from '@/stores/notifications'
 
 
 echartsUse([CandlestickChart, LineChart, BarChart, GridComponent, TooltipComponent, DataZoomComponent, LegendComponent, TitleComponent, CanvasRenderer])
@@ -577,7 +716,6 @@ const router = useRouter()
 const analysisStatus = ref<'idle' | 'running' | 'completed' | 'failed'>('idle')
 const analysisProgress = ref(0)
 const analysisMessage = ref('')
-const currentTaskId = ref<string | null>(null)
 const lastAnalysis = ref<any | null>(null)
 const lastTaskInfo = ref<any | null>(null) // 保存任务信息（包含 end_time 等）
 
@@ -585,15 +723,12 @@ const lastTaskInfo = ref<any | null>(null) // 保存任务信息（包含 end_ti
 const showReportsDialog = ref(false)
 const activeReportTab = ref('')
 
-const notifStore = useNotificationStore()
-
-const lastAnalysisTagType = computed(() => {
-  const reco = String(lastAnalysis.value?.recommendation || '').toLowerCase()
-  if (reco.includes('买') || reco.includes('buy') || reco.includes('增持') || reco.includes('强')) return 'success'
-  if (reco.includes('卖') || reco.includes('sell')) return 'danger'
-  if (reco.includes('减持') || reco.includes('谨慎')) return 'warning'
-  return 'info'
-})
+// 历史分析记录
+const analysisHistoryList = ref<any[]>([])
+const historyLoading = ref(false)
+const historyTotal = ref(0)
+const historyPageSize = ref(5)
+const historyCurrentPage = ref(1)
 
 // 股票代码（从路由参数获取）
 const code = computed(() => {
@@ -953,6 +1088,7 @@ onMounted(async () => {
     fetchNews(),
     checkFavorite(),
     fetchLatestAnalysis(),  // 获取最新的历史分析报告
+    loadAnalysisHistory(),  // 加载历史分析记录列表
     fetchSyncStatus(),  // 获取同步状态
     fetchStockTrades()  // 获取模拟交易数据
   ])
@@ -1019,6 +1155,16 @@ const avgPrice = ref<number | null>(null)
 const currentQuantity = ref<number>(0)  // 当前持有数量
 const showAvgPrice = ref(true) // 是否显示均价线
 const showTradesDialog = ref(false) // 是否显示交易记录对话框
+
+// 🔥 模拟交易下单对话框
+const orderDialog = ref(false)
+const fetchingPrice = ref(false)
+const order = ref({
+  code: '',
+  side: 'buy' as 'buy' | 'sell',
+  qty: 100,
+  price: null as number | null
+})
 
 function periodLabelToParam(p: string): string {
   if (p.includes('5')) return '5m'
@@ -1410,10 +1556,6 @@ function updateKlineChart() {
       axisLabel: { inside: false }
     }
   ]
-  
-  // 计算 dataZoom 的位置，确保不与副图重叠
-  const totalChartHeight = mainChartHeight + 60 + (subplotCount * (subplotHeight + gridGap))
-  const dataZoomTop = totalChartHeight + 10 // 留出10px间距
   
   const dataZooms: any[] = [
     { type: 'inside', xAxisIndex: [0], start: 70, end: 100 },
@@ -2050,6 +2192,174 @@ async function fetchLatestAnalysis() {
   }
 }
 
+// 加载历史分析记录列表
+async function loadAnalysisHistory() {
+  historyLoading.value = true
+  try {
+    const resp: any = await analysisApi.getHistory({
+      symbol: symbol.value,
+      stock_code: symbol.value,  // 兼容字段
+      page: historyCurrentPage.value,
+      page_size: historyPageSize.value
+    })
+
+    const responseData = resp?.data || resp
+    const actualData = responseData?.success ? responseData.data : responseData
+    const tasks = actualData?.tasks || actualData?.analyses || []
+    
+    // 处理每条记录，提取关键信息，过滤掉失败的记录
+    analysisHistoryList.value = tasks
+      .filter((task: any) => {
+        const status = task.status || 'completed'
+        // 只显示已完成和进行中的记录，不显示失败、取消等状态
+        return status === 'completed' || status === 'running' || status === 'pending'
+      })
+      .map((task: any) => {
+        // 优先使用 result_data，其次 result
+        const resultData = task.result_data || task.result || {}
+        return {
+          task_id: task.task_id || task.analysis_id || task.id,
+          status: task.status || 'completed',
+          created_at: task.start_time || task.created_at,
+          execution_time: task.execution_time || task.elapsed_time || resultData.execution_time,
+          research_depth: resultData.research_depth || task.parameters?.research_depth,
+          summary: resultData.summary,
+          recommendation: resultData.recommendation,
+          confidence_score: resultData.confidence_score,
+          parameters: task.parameters,
+          result_data: resultData
+        }
+      })
+    
+    historyTotal.value = actualData?.total || tasks.length
+  } catch (e) {
+    console.error('加载历史分析记录失败:', e)
+    ElMessage.error('加载历史记录失败')
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+// 查看历史记录详情
+function viewHistoryDetail(item: any) {
+  // 如果是正在执行中的任务，不响应点击
+  if (item.status === 'running' || item.status === 'pending') {
+    return
+  }
+  
+  if (item.result_data) {
+    lastAnalysis.value = item.result_data
+    lastTaskInfo.value = item
+    showReportsDialog.value = true
+    
+    // 设置默认激活的标签页
+    const reports = item.result_data?.reports || {}
+    const reportKeys = Object.keys(reports)
+    if (reportKeys.length > 0) {
+      activeReportTab.value = reportKeys[0]
+    }
+  } else if (item.task_id) {
+    // 如果没有 result_data，尝试通过 task_id 获取
+    loadTaskResult(item.task_id)
+  } else {
+    ElMessage.warning('该记录暂无详细报告')
+  }
+}
+
+// 加载任务结果
+async function loadTaskResult(taskId: string) {
+  try {
+    const resultResp: any = await analysisApi.getTaskResult(taskId)
+    lastAnalysis.value = resultResp?.data || resultResp
+    showReportsDialog.value = true
+    
+    const reports = lastAnalysis.value?.reports || {}
+    const reportKeys = Object.keys(reports)
+    if (reportKeys.length > 0) {
+      activeReportTab.value = reportKeys[0]
+    }
+  } catch (e) {
+    console.error('获取任务结果失败:', e)
+    ElMessage.error('获取报告失败')
+  }
+}
+
+// 分页处理
+function handleHistoryPageChange(page: number) {
+  historyCurrentPage.value = page
+  loadAnalysisHistory()
+}
+
+// 状态标签类型
+function getStatusTagType(status: string): string {
+  const statusMap: Record<string, string> = {
+    'completed': 'success',
+    'running': 'warning',
+    'pending': 'info',
+    'failed': 'danger',
+    'cancelled': 'info'
+  }
+  return statusMap[status] || 'info'
+}
+
+// 状态文本
+function getStatusText(status: string): string {
+  const textMap: Record<string, string> = {
+    'completed': '已完成',
+    'running': '进行中',
+    'pending': '等待中',
+    'failed': '失败',
+    'cancelled': '已取消'
+  }
+  return textMap[status] || status
+}
+
+// 格式化历史日期
+function formatHistoryDate(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-'
+  try {
+    const date = new Date(dateStr)
+    const now = new Date()
+    const diff = now.getTime() - date.getTime()
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+    
+    if (days === 0) {
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      if (hours === 0) {
+        const minutes = Math.floor(diff / (1000 * 60))
+        return `${minutes}分钟前`
+      }
+      return `${hours}小时前`
+    } else if (days === 1) {
+      return '昨天'
+    } else if (days < 7) {
+      return `${days}天前`
+    } else {
+      const month = String(date.getMonth() + 1).padStart(2, '0')
+      const day = String(date.getDate()).padStart(2, '0')
+      return `${month}-${day}`
+    }
+  } catch (e) {
+    return dateStr
+  }
+}
+
+// 格式化执行时间
+function formatExecutionTime(seconds: number): string {
+  if (!seconds || seconds < 1) return '<1秒'
+  if (seconds < 60) return `${Math.round(seconds)}秒`
+  const minutes = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${minutes}分${secs}秒`
+}
+
+// 置信度颜色
+function getConfidenceColor(score: number): string {
+  if (score >= 0.8) return '#67C23A'  // 绿色
+  if (score >= 0.6) return '#E6A23C'  // 橙色
+  return '#F56C6C'  // 红色
+}
+
 // 格式化
 function fmtPrice(v: any) { const n = Number(v); return Number.isFinite(n) ? n.toFixed(2) : '-' }
 function fmtPercent(v: any) { const n = Number(v); return Number.isFinite(n) ? `${n>0?'+':''}${n.toFixed(2)}%` : '-' }
@@ -2653,5 +2963,102 @@ function exportReport() {
 .trades-note .el-icon {
   font-size: 14px;
   color: #0284c7;
+}
+
+/* 历史分析记录样式 */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.history-item {
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-item:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+  transform: translateY(-1px);
+}
+
+/* 正在执行中的记录样式 */
+.history-item.is-running {
+  cursor: not-allowed;
+  opacity: 0.7;
+  background: #f9fafb;
+}
+
+.history-item.is-running:hover {
+  border-color: #e5e7eb;
+  box-shadow: none;
+  transform: none;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-date {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.history-content {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.history-info {
+  display: flex;
+  gap: 4px;
+  font-size: 13px;
+}
+
+.history-info .label {
+  color: #6b7280;
+}
+
+.history-info .value {
+  color: #1f2937;
+  font-weight: 500;
+}
+
+.history-summary {
+  margin-top: 8px;
+  padding: 8px;
+  background: #f9fafb;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.history-footer {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.confidence-text {
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.history-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: center;
 }
 </style>
