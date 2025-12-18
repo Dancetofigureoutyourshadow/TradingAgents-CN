@@ -2118,12 +2118,19 @@ async function fetchLatestAnalysis() {
   try {
     console.log('🔍 [fetchLatestAnalysis] 开始获取历史分析报告, symbol:', symbol.value)
 
+    // 计算一个月前的日期
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 1)
+
     const resp: any = await analysisApi.getHistory({
       symbol: symbol.value,
       stock_code: symbol.value,  // 兼容字段
       page: 1,
       page_size: 1,
-      status: 'completed'
+      status: 'completed',
+      start_date: startDate.toISOString().split('T')[0],  // 最近一个月
+      end_date: endDate.toISOString().split('T')[0]
     })
 
     console.log('🔍 [fetchLatestAnalysis] API响应:', resp)
@@ -2196,11 +2203,18 @@ async function fetchLatestAnalysis() {
 async function loadAnalysisHistory() {
   historyLoading.value = true
   try {
+    // 计算一个月前的日期
+    const endDate = new Date()
+    const startDate = new Date()
+    startDate.setMonth(startDate.getMonth() - 1)
+    
     const resp: any = await analysisApi.getHistory({
       symbol: symbol.value,
       stock_code: symbol.value,  // 兼容字段
       page: historyCurrentPage.value,
-      page_size: historyPageSize.value
+      page_size: historyPageSize.value,
+      start_date: startDate.toISOString().split('T')[0],  // 最近一个月
+      end_date: endDate.toISOString().split('T')[0]
     })
 
     const responseData = resp?.data || resp

@@ -704,10 +704,17 @@ class DataSourceManager:
                 data = data.sort_values('date')
 
             # 计算移动平均线
+            data['ma3'] = data['close'].rolling(window=3, min_periods=1).mean()  # BBI用
             data['ma5'] = data['close'].rolling(window=5, min_periods=1).mean()
+            data['ma6'] = data['close'].rolling(window=6, min_periods=1).mean()  # BBI用
             data['ma10'] = data['close'].rolling(window=10, min_periods=1).mean()
+            data['ma12'] = data['close'].rolling(window=12, min_periods=1).mean()  # BBI用
             data['ma20'] = data['close'].rolling(window=20, min_periods=1).mean()
+            data['ma24'] = data['close'].rolling(window=24, min_periods=1).mean()  # BBI用
             data['ma60'] = data['close'].rolling(window=60, min_periods=1).mean()
+            
+            # 计算BBI多空指标 (Bull and Bear Index)
+            data['bbi'] = (data['ma3'] + data['ma6'] + data['ma12'] + data['ma24']) / 4
 
             # 计算RSI（相对强弱指标）- 同花顺风格：使用中国式SMA（EMA with adjust=True）
             # 参考：https://blog.csdn.net/u011218867/article/details/117427927
@@ -753,7 +760,24 @@ class DataSourceManager:
             data['boll_upper'] = data['boll_mid'] + 2 * std
             data['boll_lower'] = data['boll_mid'] - 2 * std
 
-            logger.info(f"✅ [技术指标] 技术指标计算完成")
+            # 计算KDJ指标（随机指标）
+            # KDJ参数：N=9, M1=3, M2=3（中国市场标准参数）
+            n = 9
+            m1 = 3
+            m2 = 3
+            
+            # 计算RSV（未成熟随机值）
+            lowest_low = data['low'].rolling(window=n, min_periods=1).min()
+            highest_high = data['high'].rolling(window=n, min_periods=1).max()
+            data['rsv'] = ((data['close'] - lowest_low) / (highest_high - lowest_low) * 100).fillna(50)
+            
+            # 计算K值和D值（使用EMA平滑）
+            data['kdj_k'] = data['rsv'].ewm(alpha=1/m1, adjust=False).mean()
+            data['kdj_d'] = data['kdj_k'].ewm(alpha=1/m2, adjust=False).mean()
+            # 计算J值
+            data['kdj_j'] = 3 * data['kdj_k'] - 2 * data['kdj_d']
+
+            logger.info(f"✅ [技术指标] 技术指标计算完成（包含BBI和KDJ）")
 
             # 🔧 只保留最后3-5天的数据用于展示（减少token消耗）
             display_rows = min(5, len(data))
@@ -766,7 +790,9 @@ class DataSourceManager:
                 logger.info(f"🔍 [技术指标详情] 第{i}天 ({row.get('date', 'N/A')}):")
                 logger.info(f"   价格: 开={row.get('open', 0):.2f}, 高={row.get('high', 0):.2f}, 低={row.get('low', 0):.2f}, 收={row.get('close', 0):.2f}")
                 logger.info(f"   MA: MA5={row.get('ma5', 0):.2f}, MA10={row.get('ma10', 0):.2f}, MA20={row.get('ma20', 0):.2f}, MA60={row.get('ma60', 0):.2f}")
+                logger.info(f"   BBI: {row.get('bbi', 0):.2f} (MA3={row.get('ma3', 0):.2f}, MA6={row.get('ma6', 0):.2f}, MA12={row.get('ma12', 0):.2f}, MA24={row.get('ma24', 0):.2f})")
                 logger.info(f"   MACD: DIF={row.get('macd_dif', 0):.4f}, DEA={row.get('macd_dea', 0):.4f}, MACD={row.get('macd', 0):.4f}")
+                logger.info(f"   KDJ: K={row.get('kdj_k', 0):.2f}, D={row.get('kdj_d', 0):.2f}, J={row.get('kdj_j', 0):.2f}")
                 logger.info(f"   RSI: RSI6={row.get('rsi6', 0):.2f}, RSI12={row.get('rsi12', 0):.2f}, RSI24={row.get('rsi24', 0):.2f} (同花顺风格)")
                 logger.info(f"   RSI14: {row.get('rsi14', 0):.2f} (国际标准)")
                 logger.info(f"   BOLL: 上={row.get('boll_upper', 0):.2f}, 中={row.get('boll_mid', 0):.2f}, 下={row.get('boll_lower', 0):.2f}")
@@ -812,6 +838,26 @@ class DataSourceManager:
                 result += " (价格在MA60上方 ↑)\n\n"
             else:
                 result += " (价格在MA60下方 ↓)\n\n"
+
+            # BBI多空指标 (中国市场重点指标)
+            bbi_value = latest_data['bbi']
+            result += f"🎯 BBI多空指标 (Bull and Bear Index):\n"
+            result += f"   BBI: ¥{bbi_value:.2f}"
+            if latest_price > bbi_value:
+                bbi_diff = ((latest_price - bbi_value) / bbi_value) * 100
+                result += f" (价格在BBI上方 {bbi_diff:.2f}% - 多头市场 ↑)\n"
+            elif latest_price < bbi_value:
+                bbi_diff = ((bbi_value - latest_price) / bbi_value) * 100
+                result += f" (价格在BBI下方 {bbi_diff:.2f}% - 空头市场 ↓)\n"
+            else:
+                result += " (价格等于BBI - 多空平衡 ↔)\n"
+
+            # BBI组成（显示MA3/6/12/24用于BBI计算）
+            result += f"   BBI计算: (MA3 + MA6 + MA12 + MA24) / 4\n"
+            result += f"     MA3:  ¥{latest_data['ma3']:.2f}\n"
+            result += f"     MA6:  ¥{latest_data['ma6']:.2f}\n"
+            result += f"     MA12: ¥{latest_data['ma12']:.2f}\n"
+            result += f"     MA24: ¥{latest_data['ma24']:.2f}\n\n"
 
             # MACD指标
             result += f"📈 MACD指标:\n"
@@ -891,6 +937,57 @@ class DataSourceManager:
                 result += " (接近下轨，可能超卖 ⚠️)\n\n"
             else:
                 result += " (中性区域)\n\n"
+
+            # KDJ随机指标 (中国市场重点指标)
+            kdj_k = latest_data['kdj_k']
+            kdj_d = latest_data['kdj_d']
+            kdj_j = latest_data['kdj_j']
+            result += f"🎯 KDJ随机指标 (Stochastic Oscillator):\n"
+            result += f"   K值: {kdj_k:.2f}"
+            if kdj_k >= 80:
+                result += " (超买区 ⚠️)\n"
+            elif kdj_k <= 20:
+                result += " (超卖区 ⚠️)\n"
+            else:
+                result += " (正常区)\n"
+            
+            result += f"   D值: {kdj_d:.2f}"
+            if kdj_d >= 80:
+                result += " (超买区 ⚠️)\n"
+            elif kdj_d <= 20:
+                result += " (超卖区 ⚠️)\n"
+            else:
+                result += " (正常区)\n"
+            
+            result += f"   J值: {kdj_j:.2f}"
+            if kdj_j > 100:
+                result += " (强超买 ⚠️ - 注意回调风险)\n"
+            elif kdj_j < 0:
+                result += " (强超卖 ⚠️ - 可能反弹机会)\n"
+            elif kdj_j >= 80:
+                result += " (超买区 ⚠️)\n"
+            elif kdj_j <= 20:
+                result += " (超卖区 ⚠️)\n"
+            else:
+                result += " (正常区)\n"
+
+            # 判断KDJ金叉/死叉
+            if len(data) > 1:
+                prev_k = data.iloc[-2]['kdj_k']
+                prev_d = data.iloc[-2]['kdj_d']
+                curr_k = kdj_k
+                curr_d = kdj_d
+
+                if prev_k <= prev_d and curr_k > curr_d:
+                    result += "   ⚠️ KDJ金叉信号（K线上穿D线 - 买入信号）\n"
+                elif prev_k >= prev_d and curr_k < curr_d:
+                    result += "   ⚠️ KDJ死叉信号（K线下穿D线 - 卖出信号）\n"
+                else:
+                    if curr_k > curr_d:
+                        result += "   趋势: K>D (多头态势 ↑)\n"
+                    else:
+                        result += "   趋势: K<D (空头态势 ↓)\n"
+            result += "\n"
 
             # 价格统计
             result += f"📊 价格统计 (最近{display_rows}个交易日):\n"

@@ -227,10 +227,15 @@ class StockNews(BaseStockModel):
 
 class MovingAverages(BaseModel):
     """移动平均线数据"""
+    ma3: Optional[float] = Field(None, description="3日均线（用于BBI计算）")
     ma5: Optional[float] = Field(None, description="5日均线")
+    ma6: Optional[float] = Field(None, description="6日均线（用于BBI计算）")
     ma10: Optional[float] = Field(None, description="10日均线")
+    ma12: Optional[float] = Field(None, description="12日均线（用于BBI计算）")
     ma20: Optional[float] = Field(None, description="20日均线")
+    ma24: Optional[float] = Field(None, description="24日均线（用于BBI计算）")
     ma60: Optional[float] = Field(None, description="60日均线")
+    bbi: Optional[float] = Field(None, description="BBI多空指标 = (MA3 + MA6 + MA12 + MA24) / 4")
 
 
 class TechnicalIndicatorsData(BaseModel):
