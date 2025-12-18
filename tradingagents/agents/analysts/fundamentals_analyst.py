@@ -118,20 +118,21 @@ def create_fundamentals_analyst(llm, toolkit):
         current_date = state["trade_date"]
         ticker = state["company_of_interest"]
 
-        # 🔧 基本面分析数据范围：固定获取10天数据（处理周末/节假日/数据延迟）
+        # 🔧 基本面分析数据范围：固定获取30天数据（处理周末/节假日/数据延迟）
         # 参考文档：docs/ANALYST_DATA_CONFIGURATION.md
         # 基本面分析主要依赖财务数据（PE、PB、ROE等），只需要当前股价
-        # 获取10天数据是为了保证能拿到数据，但实际分析只使用最近2天
+        # 获取30天数据是为了保证能拿到数据，但实际分析只使用最近2天
         from datetime import datetime, timedelta
+        day = 30
         try:
             end_date_dt = datetime.strptime(current_date, "%Y-%m-%d")
-            start_date_dt = end_date_dt - timedelta(days=10)
+            start_date_dt = end_date_dt - timedelta(days=day)
             start_date = start_date_dt.strftime("%Y-%m-%d")
-            logger.info(f"📅 [基本面分析师] 数据范围: {start_date} 至 {current_date} (固定10天)")
+            logger.info(f"📅 [基本面分析师] 数据范围: {start_date} 至 {current_date} (固定{day}天)")
         except Exception as e:
-            # 如果日期解析失败，使用默认10天前
+            # 如果日期解析失败，使用默认day天前
             logger.warning(f"⚠️ [基本面分析师] 日期解析失败，使用默认范围: {e}")
-            start_date = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d")
+            start_date = (datetime.now() - timedelta(days=day)).strftime("%Y-%m-%d")
 
         logger.debug(f"📊 [DEBUG] 输入参数: ticker={ticker}, date={current_date}")
         logger.debug(f"📊 [DEBUG] 当前状态中的消息数量: {len(state.get('messages', []))}")

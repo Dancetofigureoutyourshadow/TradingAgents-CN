@@ -1279,7 +1279,7 @@ class SimpleAnalysisService:
                 analysis_date = datetime.now().strftime("%Y-%m-%d")
                 logger.info(f"📅 使用当前日期作为分析日期: {analysis_date}")
 
-            day = 21
+            day = 30
             # 🔧 智能日期范围处理：获取最近10天的数据，自动处理周末/节假日
             # 这样可以确保即使是周末或节假日，也能获取到最后一个交易日的数据
             from tradingagents.utils.dataflow_utils import get_trading_date_range
@@ -1287,7 +1287,7 @@ class SimpleAnalysisService:
 
             logger.info(f"📅 分析目标日期: {analysis_date}")
             logger.info(f"📅 数据查询范围: {data_start_date} 至 {data_end_date} (最近{day}天)")
-            logger.info(f"💡 说明: 获取10天数据可自动处理周末、节假日和数据延迟问题")
+            logger.info(f"💡 说明: 获取{day}天数据可自动处理周末、节假日和数据延迟问题")
 
             # 开始分析 - 进度10%，即将进入分析师阶段
             # 注意：不要手动设置过高的进度，让 graph_progress_callback 来更新实际的分析进度

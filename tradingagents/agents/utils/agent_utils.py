@@ -835,10 +835,10 @@ class Toolkit:
                 logger.info(f"📊 [基本面策略] 默认模式：获取标准基本面分析")
             
             # 基本面分析策略：
-            # 1. 获取10天数据（保证能拿到数据，处理周末/节假日）
+            # 1. 获取30天数据（保证能拿到数据，处理周末/节假日）
             # 2. 只使用最近2天数据参与分析（仅需当前价格）
-            days_to_fetch = 10  # 固定获取10天数据
-            days_to_analyze = 2  # 只分析最近2天
+            days_to_fetch = 30  # 固定获取30天数据
+            days_to_analyze = 7  # 只分析最近7天
 
             logger.info(f"📅 [基本面策略] 获取{days_to_fetch}天数据，分析最近{days_to_analyze}天")
 
